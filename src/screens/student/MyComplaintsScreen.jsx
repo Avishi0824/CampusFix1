@@ -34,7 +34,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { LoadingState } from '../../components/LoadingState';
 
 export const MyComplaintsScreen = ({ navigation }) => {
-  const { theme } = useAuth();
+  const { theme, user } = useAuth();
 
   const {
     complaints,
@@ -85,7 +85,20 @@ export const MyComplaintsScreen = ({ navigation }) => {
 
   const studentComplaints = useMemo(() => {
     return complaints.filter((complaint) => {
-      // Status filter
+      // -------------------------------------------------
+      // ONLY SHOW COMPLAINTS BELONGING TO LOGGED-IN USER
+      // -------------------------------------------------
+
+      if (
+        user?.id &&
+        complaint.studentId !== user.id
+      ) {
+        return false;
+      }
+
+      // -------------------------------------------------
+      // STATUS FILTER
+      // -------------------------------------------------
 
       if (
         selectedStatusTab === 'ACTIVE' &&
@@ -101,7 +114,9 @@ export const MyComplaintsScreen = ({ navigation }) => {
         return false;
       }
 
-      // Category filter
+      // -------------------------------------------------
+      // CATEGORY FILTER
+      // -------------------------------------------------
 
       if (
         selectedCategory !== 'ALL' &&
@@ -114,6 +129,7 @@ export const MyComplaintsScreen = ({ navigation }) => {
     });
   }, [
     complaints,
+    user?.id,
     selectedStatusTab,
     selectedCategory,
   ]);
@@ -322,7 +338,15 @@ export const MyComplaintsScreen = ({ navigation }) => {
                 },
               ]}
             >
-              Hostel Block B • Room 304
+              {user?.hostelBlock ||
+                user?.hostel ||
+                'Hostel'}
+              {user?.roomNumber || user?.room
+                ? ` • Room ${
+                    user?.roomNumber ||
+                    user?.room
+                  }`
+                : ''}
             </Text>
           </View>
 

@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -16,6 +18,7 @@ import {
 
 import { useAuth } from '../../context/AuthContext';
 import { useComplaints } from '../../context/ComplaintsContext';
+
 import {
   Typography,
   Spacing,
@@ -29,28 +32,54 @@ import { Button } from '../../components/Button';
 
 export const StudentProfileScreen = () => {
   const { user, theme, logout } = useAuth();
+
   const { complaints } = useComplaints();
 
-  /* ---------------- COMPLAINT METRICS ---------------- */
+  // =====================================================
+  // ONLY THE LOGGED-IN STUDENT'S COMPLAINTS
+  // =====================================================
 
-  const total = complaints.length;
+  const myComplaints = useMemo(() => {
+    if (!user?.id) {
+      return [];
+    }
 
-  const inProgress = complaints.filter(
-    (c) =>
-      c.status === 'IN_PROGRESS' ||
-      c.status === 'ASSIGNED'
-  ).length;
+    return complaints.filter(
+      (complaint) =>
+        complaint.studentId === user.id
+    );
+  }, [complaints, user?.id]);
 
-  const resolved = complaints.filter(
-    (c) => c.status === 'RESOLVED'
-  ).length;
+ /* ---------------- COMPLAINT METRICS ---------------- */
+
+const total = complaints.filter(
+  (complaint) => complaint.studentId === user?.id
+).length;
+
+const inProgress = complaints.filter(
+  (complaint) =>
+    complaint.studentId === user?.id &&
+    (complaint.status === 'IN_PROGRESS' ||
+      complaint.status === 'ASSIGNED')
+).length;
+
+const resolved = complaints.filter(
+  (complaint) =>
+    complaint.studentId === user?.id &&
+    complaint.status === 'RESOLVED'
+).length;
+
+  // =====================================================
+  // SCREEN
+  // =====================================================
 
   return (
     <SafeAreaView
       style={[
         styles.safeArea,
         {
-          backgroundColor: theme.colors.background,
+          backgroundColor:
+            theme.colors.background,
         },
       ]}
     >
@@ -60,10 +89,14 @@ export const StudentProfileScreen = () => {
       />
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={
+          styles.scrollContent
+        }
         showsVerticalScrollIndicator={false}
       >
-        {/* ---------------- PROFILE CARD ---------------- */}
+        {/* ================================================= */}
+        {/* PROFILE CARD */}
+        {/* ================================================= */}
 
         <Card style={styles.profileCard}>
           <View style={styles.profileHeader}>
@@ -71,7 +104,8 @@ export const StudentProfileScreen = () => {
               style={[
                 styles.avatarWrapper,
                 {
-                  borderColor: theme.colors.accent,
+                  borderColor:
+                    theme.colors.accent,
                   backgroundColor:
                     theme.colors.surfaceSubtle,
                 },
@@ -79,27 +113,34 @@ export const StudentProfileScreen = () => {
             >
               <GraduationCap
                 size={28}
-                color={theme.colors.accent}
+                color={
+                  theme.colors.accent
+                }
               />
             </View>
 
-            <View style={styles.profileDetails}>
+            <View
+              style={styles.profileDetails}
+            >
               <Text
                 style={[
                   styles.userName,
                   {
-                    color: theme.colors.textPrimary,
+                    color:
+                      theme.colors
+                        .textPrimary,
                   },
                 ]}
               >
-                {user?.name || 'Aarav Mehta'}
+                {user?.name || 'User'}
               </Text>
 
               <Text
                 style={[
                   styles.userRoleTag,
                   {
-                    color: theme.colors.accent,
+                    color:
+                      theme.colors.accent,
                   },
                 ]}
               >
@@ -110,11 +151,14 @@ export const StudentProfileScreen = () => {
                 style={[
                   styles.userEmail,
                   {
-                    color: theme.colors.textSecondary,
+                    color:
+                      theme.colors
+                        .textSecondary,
                   },
                 ]}
               >
-                {user?.email || 'aarav.mehta@campus.edu'}
+                {user?.email ||
+                  'No email available'}
               </Text>
             </View>
           </View>
@@ -124,24 +168,32 @@ export const StudentProfileScreen = () => {
               styles.divider,
               {
                 backgroundColor:
-                  theme.colors.borderLight,
+                  theme.colors
+                    .borderLight,
               },
             ]}
           />
 
-          {/* Hostel */}
+          {/* ================================================= */}
+          {/* HOSTEL */}
+          {/* ================================================= */}
 
           <View style={styles.infoRow}>
             <Building
               size={15}
-              color={theme.colors.textSecondary}
+              color={
+                theme.colors
+                  .textSecondary
+              }
             />
 
             <Text
               style={[
                 styles.infoLabel,
                 {
-                  color: theme.colors.textSecondary,
+                  color:
+                    theme.colors
+                      .textSecondary,
                 },
               ]}
             >
@@ -152,29 +204,45 @@ export const StudentProfileScreen = () => {
               style={[
                 styles.infoValue,
                 {
-                  color: theme.colors.textPrimary,
+                  color:
+                    theme.colors
+                      .textPrimary,
                 },
               ]}
             >
-              {user?.hostelBlock || 'Block B (Kaveri)'},
-              {' '}
-              Room {user?.roomNumber || '304'}
+              {user?.hostel ||
+                user?.hostelBlock ||
+                'Not provided'}
+
+              {(user?.room ||
+                user?.roomNumber) &&
+                `, Room ${
+                  user?.room ||
+                  user?.roomNumber
+                }`}
             </Text>
           </View>
 
-          {/* Phone */}
+          {/* ================================================= */}
+          {/* PHONE */}
+          {/* ================================================= */}
 
           <View style={styles.infoRow}>
             <Phone
               size={15}
-              color={theme.colors.textSecondary}
+              color={
+                theme.colors
+                  .textSecondary
+              }
             />
 
             <Text
               style={[
                 styles.infoLabel,
                 {
-                  color: theme.colors.textSecondary,
+                  color:
+                    theme.colors
+                      .textSecondary,
                 },
               ]}
             >
@@ -185,22 +253,29 @@ export const StudentProfileScreen = () => {
               style={[
                 styles.infoValue,
                 {
-                  color: theme.colors.textPrimary,
+                  color:
+                    theme.colors
+                      .textPrimary,
                 },
               ]}
             >
-              {user?.phone || '+91 98765 43210'}
+              {user?.phone ||
+                'Not provided'}
             </Text>
           </View>
         </Card>
 
-        {/* ---------------- COMPLAINT ACTIVITY ---------------- */}
+        {/* ================================================= */}
+        {/* COMPLAINT ACTIVITY */}
+        {/* ================================================= */}
 
         <Text
           style={[
             styles.sectionLabel,
             {
-              color: theme.colors.textSecondary,
+              color:
+                theme.colors
+                  .textSecondary,
             },
           ]}
         >
@@ -213,26 +288,39 @@ export const StudentProfileScreen = () => {
             value={total}
           />
 
-          <View style={styles.statsGap} />
+          <View
+            style={styles.statsGap}
+          />
 
           <StatsCard
             label="ACTIVE"
             value={inProgress}
-            color={theme.status.inProgress}
+            color={
+              theme.status
+                .inProgress
+            }
           />
 
-          <View style={styles.statsGap} />
+          <View
+            style={styles.statsGap}
+          />
 
           <StatsCard
             label="RESOLVED"
             value={resolved}
-            color={theme.status.resolved}
+            color={
+              theme.status.resolved
+            }
           />
         </View>
 
-        {/* ---------------- SIGN OUT ---------------- */}
+        {/* ================================================= */}
+        {/* SIGN OUT */}
+        {/* ================================================= */}
 
-        <View style={styles.signOutSection}>
+        <View
+          style={styles.signOutSection}
+        >
           <Button
             title="Sign Out"
             onPress={logout}
@@ -251,18 +339,24 @@ export const StudentProfileScreen = () => {
   );
 };
 
+// =====================================================
+// STYLES
+// =====================================================
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
 
   scrollContent: {
-    paddingHorizontal: Spacing.screenHorizontal,
+    paddingHorizontal:
+      Spacing.screenHorizontal,
+
     paddingTop: 16,
     paddingBottom: 40,
   },
 
-  /* ---------------- PROFILE ---------------- */
+  // PROFILE
 
   profileCard: {
     marginBottom: 28,
@@ -277,12 +371,14 @@ const styles = StyleSheet.create({
     width: 86,
     height: 86,
 
-    borderWidth: Geometry.borderWidthThin,
+    borderWidth:
+      Geometry.borderWidthThin,
 
     alignItems: 'center',
     justifyContent: 'center',
 
-    borderRadius: Geometry.radiusNone,
+    borderRadius:
+      Geometry.radiusNone,
 
     marginRight: 20,
   },
@@ -292,20 +388,32 @@ const styles = StyleSheet.create({
   },
 
   userName: {
-    fontFamily: Typography.bodyBold,
-    fontSize: Typography.sizes.h2,
+    fontFamily:
+      Typography.bodyBold,
+
+    fontSize:
+      Typography.sizes.h2,
   },
 
   userRoleTag: {
-    fontFamily: Typography.monoBold,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.monoBold,
+
+    fontSize:
+      Typography.sizes.micro,
+
     letterSpacing: 0.8,
+
     marginTop: 4,
   },
 
   userEmail: {
-    fontFamily: Typography.body,
-    fontSize: Typography.sizes.caption,
+    fontFamily:
+      Typography.body,
+
+    fontSize:
+      Typography.sizes.caption,
+
     marginTop: 3,
   },
 
@@ -321,24 +429,37 @@ const styles = StyleSheet.create({
   },
 
   infoLabel: {
-    fontFamily: Typography.mono,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.mono,
+
+    fontSize:
+      Typography.sizes.micro,
+
     marginLeft: 7,
     marginRight: 7,
   },
 
   infoValue: {
     flex: 1,
-    fontFamily: Typography.bodyMedium,
-    fontSize: Typography.sizes.caption,
+
+    fontFamily:
+      Typography.bodyMedium,
+
+    fontSize:
+      Typography.sizes.caption,
   },
 
-  /* ---------------- COMPLAINT ACTIVITY ---------------- */
+  // COMPLAINT ACTIVITY
 
   sectionLabel: {
-    fontFamily: Typography.monoBold,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.monoBold,
+
+    fontSize:
+      Typography.sizes.micro,
+
     letterSpacing: 0.8,
+
     marginBottom: 10,
   },
 
@@ -350,7 +471,7 @@ const styles = StyleSheet.create({
     width: 8,
   },
 
-  /* ---------------- SIGN OUT ---------------- */
+  // SIGN OUT
 
   signOutSection: {
     marginTop: 32,
