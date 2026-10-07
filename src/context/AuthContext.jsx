@@ -1,12 +1,11 @@
 import React, {
   createContext,
   useContext,
-  useState,
   useEffect,
+  useState,
 } from 'react';
 
-import { Storage, StorageKeys } from '../services/storage';
-import { DEMO_USERS } from '../services/mockApi';
+import { supabase } from '../services/supabase';
 import { StudentTheme, DarkTheme } from '../theme';
 
 const AuthContext = createContext(undefined);
@@ -16,72 +15,142 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadUserSession();
+    let mounted = true;
+
+    const loadInitialSession = async () => {
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) {
+          throw error;
+        }
+
+        if (session?.user) {
+          await loadProfile(session.user.id);
+        } else if (mounted) {
+          setUser(null);
+        }
+      } catch (error) {
+        console.warn('Failed to load Supabase session:', error);
+
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadInitialSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      if (session?.user) {
+        // Run outside the auth state-change callback to avoid
+        // blocking Supabase's internal auth lock.
+        setTimeout(() => {
+          loadProfile(session.user.id);
+        }, 0);
+      } else {
+        setUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const loadUserSession = async () => {
+  const loadProfile = async (authUserId) => {
     try {
-      const savedUser = await Storage.getItem(
-        StorageKeys.CURRENT_USER,
-        null
-      );
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('auth_user_id', authUserId)
+        .single();
 
-      if (savedUser) {
-        setUser(savedUser);
-      } else {
-        // No saved session → show Role Selection/Login screen
-        setUser(null);
+      if (error) {
+        throw error;
       }
-    } catch (e) {
-      console.warn('Failed to load session:', e);
 
-      // If session loading fails, show Login screen
+      setUser(data);
+    } catch (error) {
+      console.warn('Failed to load user profile:', error);
       setUser(null);
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const login = async (role, customUser) => {
-    const baseUser = DEMO_USERS[role];
+  const login = async (email, password, expectedRole) => {
+    const cleanEmail = email.trim().toLowerCase();
 
-    const loggedUser = {
-      ...baseUser,
-      ...customUser,
-      role,
-    };
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
 
-    setUser(loggedUser);
+    if (error) {
+      throw error;
+    }
 
-    await Storage.setItem(
-      StorageKeys.CURRENT_USER,
-      loggedUser
-    );
-  };
+    if (!data?.user) {
+      throw new Error('Login failed. No user returned.');
+    }
 
-  const switchRole = async (newRole) => {
-    const newUser = DEMO_USERS[newRole];
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('auth_user_id', data.user.id)
+      .single();
 
-    setUser(newUser);
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
 
-    await Storage.setItem(
-      StorageKeys.CURRENT_USER,
-      newUser
-    );
+      throw new Error(
+        'Your account is not linked to a CampusFix profile.'
+      );
+    }
+
+    if (profile.role !== expectedRole) {
+      await supabase.auth.signOut();
+
+      throw new Error(
+        `This account is registered as ${profile.role}, not ${expectedRole}.`
+      );
+    }
+
+    setUser(profile);
+
+    return profile;
   };
 
   const logout = async () => {
-    setUser(null);
+    try {
+      const { error } = await supabase.auth.signOut();
 
-    await Storage.removeItem(
-      StorageKeys.CURRENT_USER
-    );
+      if (error) {
+        throw error;
+      }
+
+      setUser(null);
+    } catch (error) {
+      console.warn('Logout failed:', error);
+    }
   };
 
-  const currentRole = user?.role || 'student';
+  const currentRole = user?.role || null;
 
   const currentTheme =
-    currentRole === 'student'
+    currentRole === 'STUDENT'
       ? StudentTheme
       : DarkTheme;
 
@@ -93,7 +162,6 @@ export const AuthProvider = ({ children }) => {
         theme: currentTheme,
         isLoading,
         login,
-        switchRole,
         logout,
       }}
     >

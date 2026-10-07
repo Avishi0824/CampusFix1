@@ -22,13 +22,15 @@ export const RootNavigator = () => {
     );
   }
 
+  const normalizedRole = role?.toUpperCase();
+
   return (
     <NavigationContainer>
       {!user ? (
         <LoginScreen />
-      ) : role === 'technician' ? (
+      ) : normalizedRole === 'TECHNICIAN' ? (
         <TechnicianNavigator />
-      ) : role === 'warden' ? (
+      ) : normalizedRole === 'WARDEN' ? (
         <WardenNavigator />
       ) : (
         <StudentNavigator />

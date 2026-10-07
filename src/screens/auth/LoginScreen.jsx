@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  TextInput,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,7 +28,10 @@ export const LoginScreen = () => {
   const { login } = useAuth();
 
   const [selectedRole, setSelectedRole] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const roles = [
     {
@@ -56,49 +60,105 @@ export const LoginScreen = () => {
     },
   ];
 
+  const selectedRoleData = roles.find(
+    (item) => item.role === selectedRole
+  );
+
+  const handleRoleSelect = (role) => {
+    if (submitting) return;
+
+    setSelectedRole(role);
+    setEmail('');
+    setPassword('');
+    setErrorMessage('');
+  };
+
   const handleContinue = async () => {
-    if (!selectedRole || submitting) return;
+    if (!selectedRole || submitting) {
+      return;
+    }
+
+    if (!email.trim() || !password) {
+      setErrorMessage(
+        'Please enter your email and password.'
+      );
+      return;
+    }
 
     setSubmitting(true);
+    setErrorMessage('');
 
     try {
-      await login(selectedRole);
+      const expectedRole = selectedRole.toUpperCase();
+
+      await login(
+        email,
+        password,
+        expectedRole
+      );
+    } catch (error) {
+      console.log('Login error:', error);
+
+      const message =
+        error?.message?.toLowerCase() || '';
+
+      if (
+        message.includes('invalid login credentials')
+      ) {
+        setErrorMessage(
+          'Invalid email or password.'
+        );
+      } else if (
+        message.includes('not linked to a campusfix profile')
+      ) {
+        setErrorMessage(
+          'This account is not linked to a CampusFix profile.'
+        );
+      } else if (
+        message.includes('registered as')
+      ) {
+        setErrorMessage(
+          error.message
+        );
+      } else {
+        setErrorMessage(
+          error?.message ||
+            'Unable to login. Please try again.'
+        );
+      }
     } finally {
       setSubmitting(false);
     }
   };
-
-  const selectedRoleData = roles.find(
-    (item) => item.role === selectedRole
-  );
 
   const getContinueText = () => {
     if (!selectedRole || !selectedRoleData) {
       return 'Select a role to continue';
     }
 
-    if (selectedRole === 'student') {
-      return 'Continue as Student';
+    if (submitting) {
+      return 'Signing in...';
     }
 
-    if (selectedRole === 'technician') {
-      return 'Continue as Technician';
-    }
-
-    return 'Continue as Warden';
+    return 'Sign In';
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
+        }
         style={styles.container}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {/* Header */}
+          {/* HEADER */}
 
           <View style={styles.header}>
             <View style={styles.topRow}>
@@ -119,16 +179,21 @@ export const LoginScreen = () => {
             </View>
 
             <Text style={styles.logo}>
-              <Text style={styles.logoCampus}>Campus</Text>
-              <Text style={styles.logoFix}>Fix</Text>
+              <Text style={styles.logoCampus}>
+                Campus
+              </Text>
+              <Text style={styles.logoFix}>
+                Fix
+              </Text>
             </Text>
 
             <Text style={styles.subtitle}>
-              Institutional Maintenance & Facility Management Portal
+              Institutional Maintenance & Facility
+              Management Portal
             </Text>
           </View>
 
-          {/* Role Selection */}
+          {/* ROLE SELECTION */}
 
           <View style={styles.roleSection}>
             <Text style={styles.sectionTitle}>
@@ -137,14 +202,17 @@ export const LoginScreen = () => {
 
             <View style={styles.roleList}>
               {roles.map((item) => {
-                const isSelected = selectedRole === item.role;
+                const isSelected =
+                  selectedRole === item.role;
 
                 return (
                   <TouchableOpacity
                     key={item.role}
                     activeOpacity={0.82}
                     disabled={submitting}
-                    onPress={() => setSelectedRole(item.role)}
+                    onPress={() =>
+                      handleRoleSelect(item.role)
+                    }
                     style={[
                       styles.roleCard,
                       isSelected && {
@@ -153,7 +221,7 @@ export const LoginScreen = () => {
                       },
                     ]}
                   >
-                    {/* Icon */}
+                    {/* ICON */}
 
                     <View
                       style={[
@@ -164,14 +232,17 @@ export const LoginScreen = () => {
                         },
                       ]}
                     >
-                      {React.cloneElement(item.icon, {
-                        color: isSelected
-                          ? item.accent
-                          : '#A7B0BC',
-                      })}
+                      {React.cloneElement(
+                        item.icon,
+                        {
+                          color: isSelected
+                            ? item.accent
+                            : '#A7B0BC',
+                        }
+                      )}
                     </View>
 
-                    {/* Content */}
+                    {/* CONTENT */}
 
                     <View style={styles.roleContent}>
                       <Text
@@ -189,14 +260,18 @@ export const LoginScreen = () => {
                         {item.title}
                       </Text>
 
-                      <Text style={styles.roleDescription}>
+                      <Text
+                        style={styles.roleDescription}
+                      >
                         {item.desc}
                       </Text>
                     </View>
 
-                    {/* Arrow */}
+                    {/* ARROW */}
 
-                    <View style={styles.arrowContainer}>
+                    <View
+                      style={styles.arrowContainer}
+                    >
                       <ChevronRight
                         size={25}
                         color={
@@ -213,24 +288,76 @@ export const LoginScreen = () => {
             </View>
           </View>
 
-          {/* Continue Button */}
+          {/* LOGIN FORM */}
+
+          {selectedRole && (
+            <View style={styles.loginSection}>
+              <Text style={styles.loginSectionTitle}>
+                {selectedRoleData?.label} LOGIN
+              </Text>
+
+              <TextInput
+                value={email}
+                onChangeText={(value) => {
+                  setEmail(value);
+                  setErrorMessage('');
+                }}
+                placeholder="Enter your email"
+                placeholderTextColor="#687380"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                keyboardType="email-address"
+                editable={!submitting}
+                style={styles.input}
+              />
+
+              <TextInput
+                value={password}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  setErrorMessage('');
+                }}
+                placeholder="Enter your password"
+                placeholderTextColor="#687380"
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="password"
+                editable={!submitting}
+                style={styles.input}
+              />
+
+              {errorMessage ? (
+                <Text style={styles.errorText}>
+                  {errorMessage}
+                </Text>
+              ) : null}
+            </View>
+          )}
+
+          {/* SIGN IN BUTTON */}
 
           <TouchableOpacity
             activeOpacity={0.85}
-            disabled={!selectedRole || submitting}
+            disabled={
+              !selectedRole || submitting
+            }
             onPress={handleContinue}
             style={[
               styles.continueButton,
               selectedRole && {
                 backgroundColor: '#E06A47',
               },
-              !selectedRole && styles.continueButtonDisabled,
+              !selectedRole &&
+                styles.continueButtonDisabled,
             ]}
           >
             <Text
               style={[
                 styles.continueText,
-                selectedRole && styles.continueTextActive,
+                selectedRole &&
+                  styles.continueTextActive,
               ]}
             >
               {getContinueText()}
@@ -245,7 +372,7 @@ export const LoginScreen = () => {
             )}
           </TouchableOpacity>
 
-          {/* Footer */}
+          {/* FOOTER */}
 
           <Text style={styles.footerText}>
             CAMPUSFIX V1.0 • HOSTEL RESIDENCE PORTAL
@@ -360,74 +487,105 @@ const styles = StyleSheet.create({
   },
 
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 15,
+    width: 58,
+    height: 58,
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: '#35404D',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
+    marginRight: 16,
   },
 
   roleContent: {
     flex: 1,
-    marginLeft: 18,
-    marginRight: 10,
+    paddingRight: 8,
   },
 
   roleLabel: {
     fontFamily: Typography.bodyBold,
-    fontSize: 13,
-    color: '#A7B0BC',
-    letterSpacing: 2,
-    marginBottom: 4,
+    fontSize: 12,
+    letterSpacing: 1.8,
+    color: '#89929E',
+    marginBottom: 5,
   },
 
   roleTitle: {
-    fontFamily: Typography.bodyBold,
-    fontSize: 21,
-    lineHeight: 27,
+    fontFamily: Typography.bodyMedium,
+    fontSize: 17,
     color: '#F5F3EE',
+    marginBottom: 5,
   },
 
   roleDescription: {
     fontFamily: Typography.body,
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#A7B0BC',
-    marginTop: 3,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#89929E',
   },
 
   arrowContainer: {
-    width: 32,
-    height: 48,
+    width: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
+  },
+
+  /* LOGIN SECTION */
+
+  loginSection: {
+    marginBottom: 28,
+  },
+
+  loginSectionTitle: {
+    fontFamily: Typography.bodyMedium,
+    fontSize: 16,
+    color: '#89929E',
+    letterSpacing: 2.5,
+    marginBottom: 18,
+  },
+
+  input: {
+    height: 56,
+    backgroundColor: '#202731',
+    borderWidth: 1.5,
+    borderColor: '#35404D',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    color: '#F5F3EE',
+    fontFamily: Typography.body,
+    fontSize: 16,
+    marginBottom: 14,
+  },
+
+  errorText: {
+    color: '#E06A47',
+    fontFamily: Typography.bodyMedium,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 2,
   },
 
   /* CONTINUE BUTTON */
 
   continueButton: {
-    minHeight: 64,
-    borderRadius: 20,
-    backgroundColor: '#202731',
-    paddingHorizontal: 22,
+    minHeight: 58,
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    paddingHorizontal: 20,
+    gap: 8,
   },
 
   continueButtonDisabled: {
-    backgroundColor: '#202731',
+    backgroundColor: '#27313D',
   },
 
   continueText: {
     fontFamily: Typography.bodyBold,
-    fontSize: 17,
-    color: '#A7B0BC',
+    fontSize: 15,
+    letterSpacing: 0.8,
+    color: '#687380',
   },
 
   continueTextActive: {
@@ -437,11 +595,11 @@ const styles = StyleSheet.create({
   /* FOOTER */
 
   footerText: {
+    marginTop: 28,
+    textAlign: 'center',
     fontFamily: Typography.bodyMedium,
     fontSize: 10,
-    color: '#596371',
-    letterSpacing: 1.4,
-    textAlign: 'center',
-    marginTop: 30,
+    letterSpacing: 1.5,
+    color: '#59636F',
   },
 });
