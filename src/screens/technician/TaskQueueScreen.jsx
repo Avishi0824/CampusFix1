@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+
 import {
   View,
   Text,
@@ -7,17 +8,14 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  Wrench,
-  CheckCircle,
-  Clock,
   MapPin,
   ArrowRight,
   Play,
   CheckCheck,
-  AlertTriangle,
 } from 'lucide-react-native';
 
 import { useAuth } from '../../context/AuthContext';
@@ -27,19 +25,18 @@ import {
   Typography,
   Spacing,
   Geometry,
-  DarkTheme,
 } from '../../theme';
 
 import { Card } from '../../components/Card';
 import { StatsCard } from '../../components/StatsCard';
 import { StatusBadge } from '../../components/StatusBadge';
 import { PriorityBadge } from '../../components/PriorityBadge';
-import { Button } from '../../components/Button';
 import { EmptyState } from '../../components/EmptyState';
 import { LoadingState } from '../../components/LoadingState';
 
 export const TaskQueueScreen = ({ navigation }) => {
   const { user, theme } = useAuth();
+
   const {
     complaints,
     updateStatus,
@@ -50,55 +47,134 @@ export const TaskQueueScreen = ({ navigation }) => {
   const [selectedTab, setSelectedTab] = useState('ALL');
   const [refreshing, setRefreshing] = useState(false);
 
+  /*
+   * ----------------------------------------------------
+   * REFRESH
+   * ----------------------------------------------------
+   */
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await refreshComplaints();
-    setRefreshing(false);
+
+    try {
+      await refreshComplaints();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  // Technician tasks
+  /*
+   * ----------------------------------------------------
+   * TECHNICIAN COMPLAINTS
+   *
+   * Only complaints assigned to the logged-in
+   * technician are shown.
+   * ----------------------------------------------------
+   */
+
+  const technicianComplaints = useMemo(() => {
+    if (!user?.id) {
+      return [];
+    }
+
+    return complaints.filter(
+      (complaint) =>
+        complaint.assignedTechnicianId === user.id
+    );
+  }, [complaints, user?.id]);
+
+  /*
+   * ----------------------------------------------------
+   * FILTERED TASKS
+   * ----------------------------------------------------
+   */
+
   const techTasks = useMemo(() => {
-    return complaints.filter((c) => {
-      // Filter by tab
+    return technicianComplaints.filter((complaint) => {
       if (selectedTab === 'IN_PROGRESS') {
-        return c.status === 'IN_PROGRESS';
+        return complaint.status === 'IN_PROGRESS';
       }
 
       if (selectedTab === 'HIGH') {
-        return c.priority === 'HIGH' && c.status !== 'RESOLVED';
+        return (
+          complaint.priority === 'HIGH' &&
+          complaint.status !== 'RESOLVED'
+        );
       }
 
       if (selectedTab === 'RESOLVED') {
-        return c.status === 'RESOLVED';
+        return complaint.status === 'RESOLVED';
       }
 
-      return true; // ALL
+      /*
+       * ALL TASKS
+       * Do not show completed tickets in the main queue.
+       */
+      return complaint.status !== 'RESOLVED';
     });
-  }, [complaints, selectedTab]);
+  }, [technicianComplaints, selectedTab]);
 
-  // Metrics
-  const assignedCount = complaints.filter(
-    (c) => c.status === 'ASSIGNED'
+  /*
+   * ----------------------------------------------------
+   * DYNAMIC METRICS
+   * ----------------------------------------------------
+   */
+
+  const assignedCount = technicianComplaints.filter(
+    (complaint) =>
+      complaint.status === 'ASSIGNED' ||
+      complaint.status === 'REPORTED'
   ).length;
 
-  const inProgressCount = complaints.filter(
-    (c) => c.status === 'IN_PROGRESS'
+  const inProgressCount = technicianComplaints.filter(
+    (complaint) =>
+      complaint.status === 'IN_PROGRESS'
   ).length;
 
-  const resolvedCount = complaints.filter(
-    (c) => c.status === 'RESOLVED'
+  const resolvedCount = technicianComplaints.filter(
+    (complaint) =>
+      complaint.status === 'RESOLVED'
   ).length;
+
+  /*
+   * ----------------------------------------------------
+   * START WORK
+   *
+   * ASSIGNED / REPORTED → IN_PROGRESS
+   * ----------------------------------------------------
+   */
 
   const handleStartWork = async (complaintId) => {
-    await updateStatus(
-      complaintId,
-      'IN_PROGRESS',
-      'Technician commenced on-site repair.'
-    );
+    try {
+      await updateStatus(
+        complaintId,
+        'IN_PROGRESS',
+        'Technician arrived on-site and commenced repair.'
+      );
+    } catch (error) {
+      console.error(
+        'Failed to start work:',
+        error
+      );
+    }
   };
 
+  /*
+   * ----------------------------------------------------
+   * TASK CARD
+   * ----------------------------------------------------
+   */
+
   const renderTaskCard = ({ item }) => {
-    const isHighPriority = item.priority === 'HIGH';
+    const isHighPriority =
+      item.priority === 'HIGH';
+
+    const canStartWork =
+      item.status === 'ASSIGNED' ||
+      item.status === 'REPORTED';
+
+    const canResolve =
+      item.status === 'IN_PROGRESS';
 
     return (
       <Card
@@ -108,18 +184,22 @@ export const TaskQueueScreen = ({ navigation }) => {
           })
         }
         highlighted={
-          isHighPriority && item.status !== 'RESOLVED'
+          isHighPriority &&
+          item.status !== 'RESOLVED'
         }
         highlightColor={theme.priority.high}
         style={styles.taskCard}
       >
-        {/* Card Header */}
+        {/* Header */}
+
         <View style={styles.cardHeader}>
           <View style={styles.ticketRow}>
             <Text
               style={[
                 styles.ticketNumber,
-                { color: theme.colors.accent },
+                {
+                  color: theme.colors.accent,
+                },
               ]}
             >
               {item.ticketNumber}
@@ -130,10 +210,14 @@ export const TaskQueueScreen = ({ navigation }) => {
             <Text
               style={[
                 styles.categoryLabel,
-                { color: theme.colors.textSecondary },
+                {
+                  color:
+                    theme.colors.textSecondary,
+                },
               ]}
             >
-              {item.category.replace('_', ' ')}
+              {String(item.category || '')
+                .replace(/_/g, ' ')}
             </Text>
           </View>
 
@@ -144,28 +228,38 @@ export const TaskQueueScreen = ({ navigation }) => {
         </View>
 
         {/* Title */}
+
         <Text
           style={[
             styles.taskTitle,
-            { color: theme.colors.textPrimary },
+            {
+              color:
+                theme.colors.textPrimary,
+            },
           ]}
           numberOfLines={2}
         >
           {item.title}
         </Text>
 
-        {/* Location & Resident */}
+        {/* Location */}
+
         <View style={styles.metaBox}>
           <View style={styles.metaRow}>
             <MapPin
               size={13}
-              color={theme.colors.textSecondary}
+              color={
+                theme.colors.textSecondary
+              }
             />
 
             <Text
               style={[
                 styles.metaText,
-                { color: theme.colors.textSecondary },
+                {
+                  color:
+                    theme.colors.textSecondary,
+                },
               ]}
               numberOfLines={1}
             >
@@ -176,19 +270,27 @@ export const TaskQueueScreen = ({ navigation }) => {
           <Text
             style={[
               styles.studentText,
-              { color: theme.colors.textMuted },
+              {
+                color:
+                  theme.colors.textMuted,
+              },
             ]}
           >
-            RESIDENT: {item.studentName.toUpperCase()}
+            RESIDENT:{' '}
+            {String(
+              item.studentName || 'UNKNOWN'
+            ).toUpperCase()}
           </Text>
         </View>
 
-        {/* Bottom Actions Row */}
+        {/* Footer */}
+
         <View
           style={[
             styles.cardFooter,
             {
-              borderTopColor: theme.colors.borderLight,
+              borderTopColor:
+                theme.colors.borderLight,
             },
           ]}
         >
@@ -198,15 +300,22 @@ export const TaskQueueScreen = ({ navigation }) => {
           />
 
           <View style={styles.actionButtonsRow}>
-            {item.status === 'ASSIGNED' && (
+
+            {/* START WORK */}
+
+            {canStartWork && (
               <TouchableOpacity
                 activeOpacity={0.75}
-                onPress={() => handleStartWork(item.id)}
+                onPress={() =>
+                  handleStartWork(item.id)
+                }
                 style={[
                   styles.quickActionBtn,
                   {
-                    backgroundColor: theme.colors.accent,
-                    borderColor: theme.colors.accent,
+                    backgroundColor:
+                      theme.colors.accent,
+                    borderColor:
+                      theme.colors.accent,
                   },
                 ]}
               >
@@ -215,25 +324,36 @@ export const TaskQueueScreen = ({ navigation }) => {
                   color="#FFFFFF"
                 />
 
-                <Text style={styles.quickActionText}>
+                <Text
+                  style={
+                    styles.quickActionText
+                  }
+                >
                   START WORK
                 </Text>
               </TouchableOpacity>
             )}
 
-            {item.status === 'IN_PROGRESS' && (
+            {/* RESOLVE */}
+
+            {canResolve && (
               <TouchableOpacity
                 activeOpacity={0.75}
                 onPress={() =>
-                  navigation.navigate('TaskDetail', {
-                    complaintId: item.id,
-                  })
+                  navigation.navigate(
+                    'TaskDetail',
+                    {
+                      complaintId: item.id,
+                    }
+                  )
                 }
                 style={[
                   styles.quickActionBtn,
                   {
-                    backgroundColor: theme.status.resolved,
-                    borderColor: theme.status.resolved,
+                    backgroundColor:
+                      theme.status.resolved,
+                    borderColor:
+                      theme.status.resolved,
                   },
                 ]}
               >
@@ -242,31 +362,45 @@ export const TaskQueueScreen = ({ navigation }) => {
                   color="#FFFFFF"
                 />
 
-                <Text style={styles.quickActionText}>
+                <Text
+                  style={
+                    styles.quickActionText
+                  }
+                >
                   RESOLVE
                 </Text>
               </TouchableOpacity>
             )}
 
+            {/* INSPECT */}
+
             <TouchableOpacity
               activeOpacity={0.75}
               onPress={() =>
-                navigation.navigate('TaskDetail', {
-                  complaintId: item.id,
-                })
+                navigation.navigate(
+                  'TaskDetail',
+                  {
+                    complaintId: item.id,
+                  }
+                )
               }
               style={[
                 styles.detailsLink,
                 {
-                  borderColor: theme.colors.border,
-                  backgroundColor: theme.colors.surfaceSubtle,
+                  borderColor:
+                    theme.colors.border,
+                  backgroundColor:
+                    theme.colors.surfaceSubtle,
                 },
               ]}
             >
               <Text
                 style={[
                   styles.detailsLinkText,
-                  { color: theme.colors.textPrimary },
+                  {
+                    color:
+                      theme.colors.textPrimary,
+                  },
                 ]}
               >
                 INSPECT
@@ -274,39 +408,62 @@ export const TaskQueueScreen = ({ navigation }) => {
 
               <ArrowRight
                 size={11}
-                color={theme.colors.textPrimary}
-                style={{ marginLeft: 3 }}
+                color={
+                  theme.colors.textPrimary
+                }
+                style={{
+                  marginLeft: 3,
+                }}
               />
             </TouchableOpacity>
+
           </View>
         </View>
       </Card>
     );
   };
 
+  /*
+   * ----------------------------------------------------
+   * UI
+   * ----------------------------------------------------
+   */
+
   return (
     <SafeAreaView
       style={[
         styles.safeArea,
-        { backgroundColor: theme.colors.background },
+        {
+          backgroundColor:
+            theme.colors.background,
+        },
       ]}
-      edges={['top', 'left', 'right']}
+      edges={[
+        'top',
+        'left',
+        'right',
+      ]}
     >
-      {/* Editorial Header (Figma 1:809) */}
+      {/* Header */}
+
       <View
         style={[
           styles.headerContainer,
           {
-            borderBottomColor: theme.colors.border,
+            borderBottomColor:
+              theme.colors.border,
           },
         ]}
       >
         <View style={styles.headerTop}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text
               style={[
                 styles.screenTitle,
-                { color: theme.colors.textPrimary },
+                {
+                  color:
+                    theme.colors.textPrimary,
+                },
               ]}
             >
               Task Queue
@@ -315,10 +472,18 @@ export const TaskQueueScreen = ({ navigation }) => {
             <Text
               style={[
                 styles.screenSubtitle,
-                { color: theme.colors.textSecondary },
+                {
+                  color:
+                    theme.colors.textSecondary,
+                },
               ]}
+              numberOfLines={1}
             >
-              {user?.name || 'Rajesh Kumar'} • Plumbing & Facilities
+              {user?.name || 'Technician'}
+              {' • '}
+              {user?.specializationLabel ||
+                user?.specialization ||
+                'Maintenance'}
             </Text>
           </View>
 
@@ -326,7 +491,8 @@ export const TaskQueueScreen = ({ navigation }) => {
             style={[
               styles.statusIndicator,
               {
-                borderColor: theme.colors.border,
+                borderColor:
+                  theme.colors.border,
               },
             ]}
           >
@@ -334,7 +500,8 @@ export const TaskQueueScreen = ({ navigation }) => {
               style={[
                 styles.liveDot,
                 {
-                  backgroundColor: theme.colors.accent,
+                  backgroundColor:
+                    theme.colors.accent,
                 },
               ]}
             />
@@ -342,7 +509,10 @@ export const TaskQueueScreen = ({ navigation }) => {
             <Text
               style={[
                 styles.liveText,
-                { color: theme.colors.textPrimary },
+                {
+                  color:
+                    theme.colors.textPrimary,
+                },
               ]}
             >
               ON DUTY
@@ -350,7 +520,8 @@ export const TaskQueueScreen = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Metric Summary Cards */}
+        {/* Dynamic Stats */}
+
         <View style={styles.statsRow}>
           <StatsCard
             label="ASSIGNED"
@@ -375,77 +546,98 @@ export const TaskQueueScreen = ({ navigation }) => {
           />
         </View>
 
-        {/* Filter Tabs */}
+        {/* Tabs */}
+
         <View style={styles.filterTabs}>
-          {['ALL', 'IN_PROGRESS', 'HIGH', 'RESOLVED'].map(
-            (tab) => {
-              const isActive = selectedTab === tab;
+          {[
+            'ALL',
+            'IN_PROGRESS',
+            'HIGH',
+            'RESOLVED',
+          ].map((tab) => {
+            const isActive =
+              selectedTab === tab;
 
-              const labels = {
-                ALL: 'ALL TASKS',
-                IN_PROGRESS: 'IN PROGRESS',
-                HIGH: 'HIGH PRIORITY',
-                RESOLVED: 'RESOLVED',
-              };
+            const labels = {
+              ALL: 'ALL TASKS',
+              IN_PROGRESS: 'IN PROGRESS',
+              HIGH: 'HIGH PRIORITY',
+              RESOLVED: 'RESOLVED',
+            };
 
-              return (
-                <TouchableOpacity
-                  key={tab}
-                  activeOpacity={0.75}
-                  onPress={() => setSelectedTab(tab)}
-                  style={[
-                    styles.tabButton,
-                    {
-                      borderBottomColor: isActive
+            return (
+              <TouchableOpacity
+                key={tab}
+                activeOpacity={0.75}
+                onPress={() =>
+                  setSelectedTab(tab)
+                }
+                style={[
+                  styles.tabButton,
+                  {
+                    borderBottomColor:
+                      isActive
                         ? theme.colors.accent
                         : 'transparent',
-                      borderBottomWidth: isActive ? 2 : 0,
+                    borderBottomWidth:
+                      isActive ? 2 : 0,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    {
+                      color: isActive
+                        ? theme.colors.accent
+                        : theme.colors
+                            .textSecondary,
+                      fontFamily: isActive
+                        ? Typography.monoBold
+                        : Typography.mono,
                     },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.tabText,
-                      {
-                        color: isActive
-                          ? theme.colors.accent
-                          : theme.colors.textSecondary,
-                        fontFamily: isActive
-                          ? Typography.monoBold
-                          : Typography.mono,
-                      },
-                    ]}
-                  >
-                    {labels[tab]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }
-          )}
+                  {labels[tab]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      {/* Task Queue List */}
+      {/* Task List */}
+
       {isLoading && !refreshing ? (
-        <LoadingState message="Fetching active work orders..." />
+        <LoadingState
+          message="Fetching work orders..."
+        />
       ) : (
         <FlatList
           data={techTasks}
           keyExtractor={(item) => item.id}
           renderItem={renderTaskCard}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={
+            styles.listContent
+          }
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={theme.colors.accent}
+              tintColor={
+                theme.colors.accent
+              }
             />
           }
           ListEmptyComponent={
             <EmptyState
               title="No Tasks in Queue"
-              description="You have completed all pending work orders in this filter."
+              description={
+                selectedTab === 'RESOLVED'
+                  ? 'No resolved work orders found.'
+                  : 'No work orders are currently assigned to you.'
+              }
             />
           }
         />
@@ -460,27 +652,34 @@ const styles = StyleSheet.create({
   },
 
   headerContainer: {
-    paddingHorizontal: Spacing.screenHorizontal,
+    paddingHorizontal:
+      Spacing.screenHorizontal,
     paddingTop: 16,
-    borderBottomWidth: Geometry.borderWidthThin,
+    borderBottomWidth:
+      Geometry.borderWidthThin,
   },
 
   headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     marginBottom: 16,
   },
 
   screenTitle: {
-    fontFamily: Typography.display,
-    fontSize: Typography.sizes.h1,
+    fontFamily:
+      Typography.display,
+    fontSize:
+      Typography.sizes.h1,
     letterSpacing: -0.3,
   },
 
   screenSubtitle: {
-    fontFamily: Typography.body,
-    fontSize: Typography.sizes.caption,
+    fontFamily:
+      Typography.body,
+    fontSize:
+      Typography.sizes.caption,
     marginTop: 2,
   },
 
@@ -489,8 +688,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderWidth: Geometry.borderWidthThin,
-    borderRadius: Geometry.radiusNone,
+    borderWidth:
+      Geometry.borderWidthThin,
+    borderRadius:
+      Geometry.radiusNone,
+    marginLeft: 8,
   },
 
   liveDot: {
@@ -501,8 +703,10 @@ const styles = StyleSheet.create({
   },
 
   liveText: {
-    fontFamily: Typography.monoBold,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.monoBold,
+    fontSize:
+      Typography.sizes.micro,
     letterSpacing: 0.6,
   },
 
@@ -522,12 +726,14 @@ const styles = StyleSheet.create({
   },
 
   tabText: {
-    fontSize: Typography.sizes.micro,
+    fontSize:
+      Typography.sizes.micro,
     letterSpacing: 0.8,
   },
 
   listContent: {
-    paddingHorizontal: Spacing.screenHorizontal,
+    paddingHorizontal:
+      Spacing.screenHorizontal,
     paddingTop: 14,
     paddingBottom: 32,
   },
@@ -539,18 +745,22 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     marginBottom: 8,
   },
 
   ticketRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
 
   ticketNumber: {
-    fontFamily: Typography.monoBold,
-    fontSize: Typography.sizes.caption,
+    fontFamily:
+      Typography.monoBold,
+    fontSize:
+      Typography.sizes.caption,
     letterSpacing: 0.5,
   },
 
@@ -563,14 +773,19 @@ const styles = StyleSheet.create({
   },
 
   categoryLabel: {
-    fontFamily: Typography.mono,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.mono,
+    fontSize:
+      Typography.sizes.micro,
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
 
   taskTitle: {
-    fontFamily: Typography.bodySemiBold,
-    fontSize: Typography.sizes.bodyLarge,
+    fontFamily:
+      Typography.bodySemiBold,
+    fontSize:
+      Typography.sizes.bodyLarge,
     lineHeight: 22,
     marginBottom: 8,
   },
@@ -586,29 +801,37 @@ const styles = StyleSheet.create({
   },
 
   metaText: {
-    fontFamily: Typography.body,
-    fontSize: Typography.sizes.caption,
+    fontFamily:
+      Typography.body,
+    fontSize:
+      Typography.sizes.caption,
     marginLeft: 5,
+    flex: 1,
   },
 
   studentText: {
-    fontFamily: Typography.mono,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.mono,
+    fontSize:
+      Typography.sizes.micro,
     letterSpacing: 0.4,
   },
 
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     paddingTop: 10,
-    borderTopWidth: Geometry.borderWidthThin,
+    borderTopWidth:
+      Geometry.borderWidthThin,
   },
 
   actionButtonsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 1,
   },
 
   quickActionBtn: {
@@ -616,13 +839,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 9,
     paddingVertical: 5,
-    borderWidth: Geometry.borderWidthThin,
-    borderRadius: Geometry.radiusNone,
+    borderWidth:
+      Geometry.borderWidthThin,
+    borderRadius:
+      Geometry.radiusNone,
   },
 
   quickActionText: {
-    fontFamily: Typography.monoBold,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.monoBold,
+    fontSize:
+      Typography.sizes.micro,
     color: '#FFFFFF',
     marginLeft: 4,
     letterSpacing: 0.5,
@@ -633,13 +860,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 5,
-    borderWidth: Geometry.borderWidthThin,
-    borderRadius: Geometry.radiusNone,
+    borderWidth:
+      Geometry.borderWidthThin,
+    borderRadius:
+      Geometry.radiusNone,
   },
 
   detailsLinkText: {
-    fontFamily: Typography.monoBold,
-    fontSize: Typography.sizes.micro,
+    fontFamily:
+      Typography.monoBold,
+    fontSize:
+      Typography.sizes.micro,
     letterSpacing: 0.5,
   },
 });

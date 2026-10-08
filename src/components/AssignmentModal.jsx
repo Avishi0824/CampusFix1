@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+
 import {
   Modal,
   View,
@@ -12,12 +13,10 @@ import {
 import {
   X,
   Check,
-  UserCheck,
-  Star,
-  ShieldAlert,
 } from 'lucide-react-native';
 
 import { useAuth } from '../context/AuthContext';
+
 import {
   Typography,
   Spacing,
@@ -43,9 +42,24 @@ export const AssignmentModal = ({
   React.useEffect(() => {
     if (complaint) {
       setSelectedPriority(complaint.priority);
-      setSelectedTechId(
-        complaint.assignedTechnicianId || (staff[0]?.id ?? '')
-      );
+
+      /*
+       * Keep the currently assigned technician selected.
+       * If there is no current assignment, select the
+       * best matching technician automatically.
+       */
+      if (complaint.assignedTechnicianId) {
+        setSelectedTechId(complaint.assignedTechnicianId);
+      } else {
+        const matchingTechnician = staff.find(
+          (tech) =>
+            tech.specialization === complaint.category
+        );
+
+        setSelectedTechId(
+          matchingTechnician?.id || staff[0]?.id || ''
+        );
+      }
     }
   }, [complaint, staff]);
 
@@ -57,7 +71,11 @@ export const AssignmentModal = ({
     setSubmitting(true);
 
     try {
-      await onAssign(selectedTechId, selectedPriority);
+      await onAssign(
+        selectedTechId,
+        selectedPriority
+      );
+
       onClose();
     } finally {
       setSubmitting(false);
@@ -65,6 +83,30 @@ export const AssignmentModal = ({
   };
 
   const priorities = ['HIGH', 'MEDIUM', 'LOW'];
+
+  /*
+   * ----------------------------------------------------
+   * SORT TECHNICIANS
+   * ----------------------------------------------------
+   *
+   * Exact specialization matches appear first.
+   *
+   * Example:
+   * ELECTRICAL complaint
+   * → Electrical technician first
+   *
+   * PLUMBING complaint
+   * → Plumbing technician first
+   */
+  const sortedStaff = [...staff].sort((a, b) => {
+    const aMatch =
+      a.specialization === complaint.category ? 1 : 0;
+
+    const bMatch =
+      b.specialization === complaint.category ? 1 : 0;
+
+    return bMatch - aMatch;
+  });
 
   return (
     <Modal
@@ -80,16 +122,22 @@ export const AssignmentModal = ({
               style={[
                 styles.modalCard,
                 {
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.border,
+                  backgroundColor:
+                    theme.colors.surface,
+                  borderColor:
+                    theme.colors.border,
                 },
               ]}
             >
-              {/* Header */}
+              {/* HEADER */}
+
               <View
                 style={[
                   styles.header,
-                  { borderBottomColor: theme.colors.border },
+                  {
+                    borderBottomColor:
+                      theme.colors.border,
+                  },
                 ]}
               >
                 <View>
@@ -97,8 +145,10 @@ export const AssignmentModal = ({
                     style={[
                       styles.modalTitle,
                       {
-                        color: theme.colors.textPrimary,
-                        fontFamily: Typography.display,
+                        color:
+                          theme.colors.textPrimary,
+                        fontFamily:
+                          Typography.display,
                       },
                     ]}
                   >
@@ -109,8 +159,10 @@ export const AssignmentModal = ({
                     style={[
                       styles.ticketSubtitle,
                       {
-                        color: theme.colors.textSecondary,
-                        fontFamily: Typography.mono,
+                        color:
+                          theme.colors.textSecondary,
+                        fontFamily:
+                          Typography.mono,
                       },
                     ]}
                   >
@@ -122,28 +174,37 @@ export const AssignmentModal = ({
                   onPress={onClose}
                   style={[
                     styles.closeButton,
-                    { borderColor: theme.colors.border },
+                    {
+                      borderColor:
+                        theme.colors.border,
+                    },
                   ]}
                 >
                   <X
                     size={18}
-                    color={theme.colors.textPrimary}
+                    color={
+                      theme.colors.textPrimary
+                    }
                   />
                 </TouchableOpacity>
               </View>
 
-              {/* Body */}
+              {/* BODY */}
+
               <ScrollView
                 style={styles.body}
                 showsVerticalScrollIndicator={false}
               >
-                {/* Priority Selection */}
+                {/* PRIORITY */}
+
                 <Text
                   style={[
                     styles.sectionLabel,
                     {
-                      color: theme.colors.textSecondary,
-                      fontFamily: Typography.monoBold,
+                      color:
+                        theme.colors.textSecondary,
+                      fontFamily:
+                        Typography.monoBold,
                     },
                   ]}
                 >
@@ -152,24 +213,30 @@ export const AssignmentModal = ({
 
                 <View style={styles.priorityRow}>
                   {priorities.map((p) => {
-                    const isSelected = selectedPriority === p;
+                    const isSelected =
+                      selectedPriority === p;
 
                     return (
                       <TouchableOpacity
                         key={p}
                         activeOpacity={0.75}
-                        onPress={() => setSelectedPriority(p)}
+                        onPress={() =>
+                          setSelectedPriority(p)
+                        }
                         style={[
                           styles.priorityOption,
                           {
-                            borderColor: isSelected
-                              ? theme.colors.accent
-                              : theme.colors.border,
-                            backgroundColor: isSelected
-                              ? theme.isDark
-                                ? '#382D2A'
-                                : '#FDF0ED'
-                              : 'transparent',
+                            borderColor:
+                              isSelected
+                                ? theme.colors.accent
+                                : theme.colors.border,
+
+                            backgroundColor:
+                              isSelected
+                                ? theme.isDark
+                                  ? '#382D2A'
+                                  : '#FDF0ED'
+                                : 'transparent',
                           },
                         ]}
                       >
@@ -181,8 +248,12 @@ export const AssignmentModal = ({
                         {isSelected && (
                           <Check
                             size={14}
-                            color={theme.colors.accent}
-                            style={{ marginLeft: 6 }}
+                            color={
+                              theme.colors.accent
+                            }
+                            style={{
+                              marginLeft: 6,
+                            }}
                           />
                         )}
                       </TouchableOpacity>
@@ -190,13 +261,16 @@ export const AssignmentModal = ({
                   })}
                 </View>
 
-                {/* Technician List */}
+                {/* TECHNICIANS */}
+
                 <Text
                   style={[
                     styles.sectionLabel,
                     {
-                      color: theme.colors.textSecondary,
-                      fontFamily: Typography.monoBold,
+                      color:
+                        theme.colors.textSecondary,
+                      fontFamily:
+                        Typography.monoBold,
                       marginTop: 16,
                     },
                   ]}
@@ -204,38 +278,51 @@ export const AssignmentModal = ({
                   SELECT AVAILABLE TECHNICIAN
                 </Text>
 
-                {staff.map((tech) => {
-                  const isSelected = selectedTechId === tech.id;
+                {sortedStaff.map((tech) => {
+                  const isSelected =
+                    selectedTechId === tech.id;
+
                   const isCategoryMatch =
-                    tech.specialization === complaint.category;
+                    tech.specialization ===
+                    complaint.category;
 
                   return (
                     <TouchableOpacity
                       key={tech.id}
                       activeOpacity={0.75}
-                      onPress={() => setSelectedTechId(tech.id)}
+                      onPress={() =>
+                        setSelectedTechId(tech.id)
+                      }
                       style={[
                         styles.techCard,
                         {
-                          borderColor: isSelected
-                            ? theme.colors.accent
-                            : theme.colors.border,
-                          backgroundColor: isSelected
-                            ? theme.isDark
-                              ? '#353942'
-                              : '#FAF7F0'
-                            : theme.colors.cardBackground,
+                          borderColor:
+                            isSelected
+                              ? theme.colors.accent
+                              : theme.colors.border,
+
+                          backgroundColor:
+                            isSelected
+                              ? theme.isDark
+                                ? '#353942'
+                                : '#FAF7F0'
+                              : theme.colors.cardBackground,
                         },
                       ]}
                     >
                       <View style={styles.techInfo}>
-                        <View style={styles.techNameRow}>
+                        <View
+                          style={styles.techNameRow}
+                        >
                           <Text
                             style={[
                               styles.techName,
                               {
-                                color: theme.colors.textPrimary,
-                                fontFamily: Typography.bodyBold,
+                                color:
+                                  theme.colors
+                                    .textPrimary,
+                                fontFamily:
+                                  Typography.bodyBold,
                               },
                             ]}
                           >
@@ -248,15 +335,22 @@ export const AssignmentModal = ({
                                 styles.matchBadge,
                                 {
                                   backgroundColor:
-                                    theme.colors.accentSubtle,
-                                  borderColor: theme.colors.accent,
+                                    theme.colors
+                                      .accentSubtle,
+                                  borderColor:
+                                    theme.colors
+                                      .accent,
                                 },
                               ]}
                             >
                               <Text
                                 style={[
                                   styles.matchText,
-                                  { color: theme.colors.accent },
+                                  {
+                                    color:
+                                      theme.colors
+                                        .accent,
+                                  },
                                 ]}
                               >
                                 EXACT MATCH
@@ -269,52 +363,77 @@ export const AssignmentModal = ({
                           style={[
                             styles.techSpec,
                             {
-                              color: theme.colors.textSecondary,
-                              fontFamily: Typography.body,
+                              color:
+                                theme.colors
+                                  .textSecondary,
+                              fontFamily:
+                                Typography.body,
                             },
                           ]}
                         >
-                          {tech.specializationLabel}
+                          {tech.specializationLabel ||
+                            tech.specialization}
                         </Text>
 
-                        <View style={styles.techMetaRow}>
+                        <View
+                          style={
+                            styles.techMetaRow
+                          }
+                        >
                           <Text
                             style={[
                               styles.techMeta,
                               {
-                                color: theme.colors.textMuted,
-                                fontFamily: Typography.mono,
+                                color:
+                                  theme.colors
+                                    .textMuted,
+                                fontFamily:
+                                  Typography.mono,
                               },
                             ]}
                           >
-                            ACTIVE: {tech.activeTasksCount} TASKS
+                            ACTIVE:{' '}
+                            {tech.activeTasksCount ||
+                              0}{' '}
+                            TASKS
                           </Text>
 
                           <Text
                             style={[
                               styles.techMeta,
                               {
-                                color: theme.colors.textMuted,
-                                fontFamily: Typography.mono,
+                                color:
+                                  theme.colors
+                                    .textMuted,
+                                fontFamily:
+                                  Typography.mono,
                                 marginLeft: 12,
                               },
                             ]}
                           >
-                            ★ {tech.rating.toFixed(1)}
+                            ★{' '}
+                            {Number(
+                              tech.rating || 0
+                            ).toFixed(1)}
                           </Text>
                         </View>
                       </View>
+
+                      {/* RADIO */}
 
                       <View
                         style={[
                           styles.radioCircle,
                           {
-                            borderColor: isSelected
-                              ? theme.colors.accent
-                              : theme.colors.border,
-                            backgroundColor: isSelected
-                              ? theme.colors.accent
-                              : 'transparent',
+                            borderColor:
+                              isSelected
+                                ? theme.colors.accent
+                                : theme.colors.border,
+
+                            backgroundColor:
+                              isSelected
+                                ? theme.colors.accent
+                                : 'transparent',
                           },
                         ]}
                       >
@@ -330,11 +449,15 @@ export const AssignmentModal = ({
                 })}
               </ScrollView>
 
-              {/* Actions */}
+              {/* FOOTER */}
+
               <View
                 style={[
                   styles.footer,
-                  { borderTopColor: theme.colors.border },
+                  {
+                    borderTopColor:
+                      theme.colors.border,
+                  },
                 ]}
               >
                 <Button
@@ -381,7 +504,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: Spacing.cardPadding,
-    borderBottomWidth: Geometry.borderWidthThin,
+    borderBottomWidth:
+      Geometry.borderWidthThin,
   },
 
   modalTitle: {
@@ -397,7 +521,8 @@ const styles = StyleSheet.create({
   closeButton: {
     width: 32,
     height: 32,
-    borderWidth: Geometry.borderWidthThin,
+    borderWidth:
+      Geometry.borderWidthThin,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -424,7 +549,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderWidth: Geometry.borderWidthThin,
+    borderWidth:
+      Geometry.borderWidthThin,
     borderRadius: Geometry.radiusNone,
   },
 
@@ -433,7 +559,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 12,
-    borderWidth: Geometry.borderWidthThin,
+    borderWidth:
+      Geometry.borderWidthThin,
     borderRadius: Geometry.radiusNone,
     marginBottom: 8,
   },
@@ -482,7 +609,8 @@ const styles = StyleSheet.create({
   radioCircle: {
     width: 22,
     height: 22,
-    borderWidth: Geometry.borderWidthThin,
+    borderWidth:
+      Geometry.borderWidthThin,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
@@ -491,7 +619,8 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     padding: Spacing.cardPadding,
-    borderTopWidth: Geometry.borderWidthThin,
+    borderTopWidth:
+      Geometry.borderWidthThin,
     gap: 12,
   },
 

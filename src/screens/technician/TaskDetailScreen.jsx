@@ -45,8 +45,11 @@ import { TimelineView } from '../../components/TimelineView';
 import { Button } from '../../components/Button';
 import { LoadingState } from '../../components/LoadingState';
 
-export const TaskDetailScreen = ({ route, navigation }) => {
-  const { theme } = useAuth();
+export const TaskDetailScreen = ({
+  route,
+  navigation,
+}) => {
+  const { theme, user } = useAuth();
 
   const {
     getComplaintById,
@@ -54,7 +57,8 @@ export const TaskDetailScreen = ({ route, navigation }) => {
     addComment,
   } = useComplaints();
 
-  const complaintId = route?.params?.complaintId;
+  const complaintId =
+    route?.params?.complaintId;
 
   const complaint = complaintId
     ? getComplaintById(complaintId)
@@ -74,7 +78,7 @@ export const TaskDetailScreen = ({ route, navigation }) => {
 
   /*
    * ----------------------------------------------------
-   * COMPLAINT NOT FOUND
+   * NOT FOUND
    * ----------------------------------------------------
    */
 
@@ -91,10 +95,14 @@ export const TaskDetailScreen = ({ route, navigation }) => {
       >
         <ScreenHeader
           title="Task Detail"
-          onBack={() => navigation.goBack()}
+          onBack={() =>
+            navigation.goBack()
+          }
         />
 
-        <LoadingState message="Work order not found." />
+        <LoadingState
+          message="Work order not found."
+        />
       </SafeAreaView>
     );
   }
@@ -128,7 +136,8 @@ export const TaskDetailScreen = ({ route, navigation }) => {
   /*
    * ----------------------------------------------------
    * START WORK
-   * ASSIGNED → IN_PROGRESS
+   *
+   * REPORTED / ASSIGNED → IN_PROGRESS
    * ----------------------------------------------------
    */
 
@@ -138,11 +147,18 @@ export const TaskDetailScreen = ({ route, navigation }) => {
     setUpdating(true);
 
     try {
-      await updateStatus(
-        complaint.id,
-        'IN_PROGRESS',
-        'Technician arrived on-site and commenced repair.'
-      );
+      const updated =
+        await updateStatus(
+          complaint.id,
+          'IN_PROGRESS',
+          'Technician arrived on-site and commenced repair.'
+        );
+
+      if (!updated) {
+        throw new Error(
+          'Status update returned no complaint.'
+        );
+      }
 
       Alert.alert(
         'Status Updated',
@@ -166,6 +182,7 @@ export const TaskDetailScreen = ({ route, navigation }) => {
   /*
    * ----------------------------------------------------
    * RESOLVE WORK
+   *
    * IN_PROGRESS → RESOLVED
    * ----------------------------------------------------
    */
@@ -185,16 +202,30 @@ export const TaskDetailScreen = ({ route, navigation }) => {
     setUpdating(true);
 
     try {
-      await updateStatus(
-        complaint.id,
-        'RESOLVED',
-        resolutionNotes.trim(),
-        resolutionImage || undefined
-      );
+      const updated =
+        await updateStatus(
+          complaint.id,
+          'RESOLVED',
+          resolutionNotes.trim(),
+          resolutionImage || undefined
+        );
+
+      if (!updated) {
+        throw new Error(
+          'Resolution update returned no complaint.'
+        );
+      }
 
       Alert.alert(
         'Work Order Completed',
-        'The complaint has been marked RESOLVED.'
+        'The complaint has been marked RESOLVED.',
+        [
+          {
+            text: 'OK',
+            onPress: () =>
+              navigation.goBack(),
+          },
+        ]
       );
     } catch (error) {
       console.error(
@@ -213,50 +244,54 @@ export const TaskDetailScreen = ({ route, navigation }) => {
 
   /*
    * ----------------------------------------------------
-   * PICK VERIFICATION IMAGE
+   * PICK VERIFICATION PHOTO
    * ----------------------------------------------------
    */
 
-  const pickResolutionImage = async () => {
-    try {
-      const result =
-        await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          allowsEditing: true,
-          quality: 0.7,
-        });
+  const pickResolutionImage =
+    async () => {
+      try {
+        const result =
+          await ImagePicker.launchImageLibraryAsync(
+            {
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              quality: 0.7,
+            }
+          );
 
-      if (
-        !result.canceled &&
-        result.assets &&
-        result.assets[0]?.uri
-      ) {
-        setResolutionImage(
-          result.assets[0].uri
+        if (
+          !result.canceled &&
+          result.assets &&
+          result.assets[0]?.uri
+        ) {
+          setResolutionImage(
+            result.assets[0].uri
+          );
+        }
+      } catch (error) {
+        console.warn(
+          'Image picker error:',
+          error
+        );
+
+        Alert.alert(
+          'Image Error',
+          'Unable to select the image.'
         );
       }
-    } catch (error) {
-      console.warn(
-        'Image picker error:',
-        error
-      );
-
-      Alert.alert(
-        'Image Error',
-        'Unable to select the image.'
-      );
-    }
-  };
+    };
 
   /*
    * ----------------------------------------------------
-   * REMOVE VERIFICATION IMAGE
+   * REMOVE VERIFICATION PHOTO
    * ----------------------------------------------------
    */
 
-  const removeResolutionImage = () => {
-    setResolutionImage(null);
-  };
+  const removeResolutionImage =
+    () => {
+      setResolutionImage(null);
+    };
 
   /*
    * ----------------------------------------------------
@@ -264,30 +299,54 @@ export const TaskDetailScreen = ({ route, navigation }) => {
    * ----------------------------------------------------
    */
 
-  const handleSendComment = async () => {
-    const message = commentText.trim();
+  const handleSendComment =
+    async () => {
+      const message =
+        commentText.trim();
 
-    if (!message) return;
+      if (!message) return;
 
-    try {
-      await addComment(
-        complaint.id,
-        message
-      );
+      try {
+        await addComment(
+          complaint.id,
+          message
+        );
 
-      setCommentText('');
-    } catch (error) {
-      console.error(
-        'Failed to add comment:',
-        error
-      );
+        setCommentText('');
+      } catch (error) {
+        console.error(
+          'Failed to add comment:',
+          error
+        );
 
-      Alert.alert(
-        'Comment Failed',
-        'Unable to post the comment. Please try again.'
-      );
-    }
-  };
+        Alert.alert(
+          'Comment Failed',
+          'Unable to post the comment. Please try again.'
+        );
+      }
+    };
+
+  const comments =
+    complaint.comments || [];
+
+  const timeline =
+    complaint.timeline || [];
+
+  /*
+   * ----------------------------------------------------
+   * STATUS HELPERS
+   * ----------------------------------------------------
+   */
+
+  const canStartWork =
+    complaint.status === 'REPORTED' ||
+    complaint.status === 'ASSIGNED';
+
+  const isInProgress =
+    complaint.status === 'IN_PROGRESS';
+
+  const isResolved =
+    complaint.status === 'RESOLVED';
 
   /*
    * ----------------------------------------------------
@@ -307,11 +366,12 @@ export const TaskDetailScreen = ({ route, navigation }) => {
     >
       <ScreenHeader
         title={complaint.ticketNumber}
-        subtitle={`${complaint.category.replace(
-          '_',
-          ' '
-        )} Work Order`}
-        onBack={() => navigation.goBack()}
+        subtitle={`${String(
+          complaint.category || ''
+        ).replace(/_/g, ' ')} Work Order`}
+        onBack={() =>
+          navigation.goBack()
+        }
       />
 
       <KeyboardAvoidingView
@@ -326,28 +386,34 @@ export const TaskDetailScreen = ({ route, navigation }) => {
           contentContainerStyle={
             styles.scrollContent
           }
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={
+            false
+          }
           keyboardShouldPersistTaps="handled"
         >
-          {/* ----------------------------------------
-              STATUS + PRIORITY
-          ----------------------------------------- */}
+          {/* STATUS */}
 
-          <View style={styles.topStatusRow}>
+          <View
+            style={
+              styles.topStatusRow
+            }
+          >
             <StatusBadge
               status={complaint.status}
             />
 
             <PriorityBadge
-              priority={complaint.priority}
+              priority={
+                complaint.priority
+              }
             />
           </View>
 
-          {/* ----------------------------------------
-              ISSUE OVERVIEW
-          ----------------------------------------- */}
+          {/* ISSUE */}
 
-          <Card style={styles.sectionCard}>
+          <Card
+            style={styles.sectionCard}
+          >
             <Text
               style={[
                 styles.cardTitle,
@@ -360,7 +426,9 @@ export const TaskDetailScreen = ({ route, navigation }) => {
               {complaint.title}
             </Text>
 
-            <View style={styles.metaRow}>
+            <View
+              style={styles.metaRow}
+            >
               <MapPin
                 size={14}
                 color={
@@ -415,10 +483,11 @@ export const TaskDetailScreen = ({ route, navigation }) => {
               {complaint.description}
             </Text>
 
-            {/* STUDENT ATTACHMENTS */}
+            {/* Student attachments */}
 
             {complaint.images &&
-              complaint.images.length > 0 && (
+              complaint.images.length >
+                0 && (
                 <View
                   style={
                     styles.photosSection
@@ -458,11 +527,11 @@ export const TaskDetailScreen = ({ route, navigation }) => {
               )}
           </Card>
 
-          {/* ----------------------------------------
-              RESIDENT INFORMATION
-          ----------------------------------------- */}
+          {/* RESIDENT */}
 
-          <Card style={styles.sectionCard}>
+          <Card
+            style={styles.sectionCard}
+          >
             <Text
               style={[
                 styles.fieldLabel,
@@ -475,7 +544,9 @@ export const TaskDetailScreen = ({ route, navigation }) => {
               RESIDENT STUDENT INFORMATION
             </Text>
 
-            <View style={styles.studentRow}>
+            <View
+              style={styles.studentRow}
+            >
               <View
                 style={styles.studentInfo}
               >
@@ -488,7 +559,8 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                     },
                   ]}
                 >
-                  {complaint.studentName}
+                  {complaint.studentName ||
+                    'Student'}
                 </Text>
 
                 <Text
@@ -513,64 +585,62 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                   ]}
                 >
                   {complaint.studentContact ||
-                    'No contact number'}
+                    'No phone number'}
                 </Text>
               </View>
 
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={
-                  handleCallResident
-                }
-                style={[
-                  styles.callButton,
-                  {
-                    borderColor:
-                      theme.colors.accent,
-                    backgroundColor:
-                      theme.colors
-                        .surfaceSubtle,
-                  },
-                ]}
-              >
-                <Phone
-                  size={16}
-                  color={
-                    theme.colors.accent
+              {complaint.studentContact && (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={
+                    handleCallResident
                   }
-                />
-
-                <Text
                   style={[
-                    styles.callText,
+                    styles.callButton,
                     {
-                      color:
+                      borderColor:
                         theme.colors.accent,
+                      backgroundColor:
+                        theme.colors
+                          .surfaceSubtle,
                     },
                   ]}
                 >
-                  CALL
-                </Text>
-              </TouchableOpacity>
+                  <Phone
+                    size={15}
+                    color={
+                      theme.colors.accent
+                    }
+                  />
+
+                  <Text
+                    style={[
+                      styles.callText,
+                      {
+                        color:
+                          theme.colors.accent,
+                      },
+                    ]}
+                  >
+                    CALL
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </Card>
 
-          {/* ----------------------------------------
-              WORK ORDER ACTIONS
-          ----------------------------------------- */}
+          {/* WORKFLOW */}
 
           <Card
             style={[
               styles.sectionCard,
               {
                 borderColor:
-                  complaint.status ===
-                  'IN_PROGRESS'
+                  isResolved
+                    ? theme.status.resolved
+                    : isInProgress
                     ? theme.status.inProgress
-                    : complaint.status ===
-                      'RESOLVED'
-                      ? theme.status.resolved
-                      : theme.colors.accent,
+                    : theme.colors.accent,
               },
             ]}
           >
@@ -586,237 +656,229 @@ export const TaskDetailScreen = ({ route, navigation }) => {
               WORK ORDER ACTIONS
             </Text>
 
-            {/* ASSIGNED */}
+            {/* REPORTED / ASSIGNED */}
 
-            {complaint.status ===
-              'ASSIGNED' && (
-                <View
-                  style={styles.actionPanel}
+            {canStartWork && (
+              <View
+                style={
+                  styles.actionPanel
+                }
+              >
+                <Text
+                  style={[
+                    styles.statusHeading,
+                    {
+                      color:
+                        theme.colors.textPrimary,
+                    },
+                  ]}
                 >
-                  <Text
-                    style={[
-                      styles.panelDesc,
-                      {
-                        color:
-                          theme.colors
-                            .textSecondary,
-                      },
-                    ]}
-                  >
-                    You are assigned to this
-                    ticket. Tap below to notify
-                    the resident and warden that
-                    work has started.
-                  </Text>
+                  {complaint.status ===
+                  'ASSIGNED'
+                    ? 'READY TO START'
+                    : 'TICKET RECEIVED'}
+                </Text>
 
-                  <Button
-                    title="Commence On-Site Work"
-                    onPress={
-                      handleStartWork
-                    }
-                    variant="primary"
-                    loading={updating}
-                    fullWidth
-                    icon={
-                      <Play
-                        size={16}
-                        color="#FFFFFF"
-                      />
-                    }
-                  />
-                </View>
-              )}
+                <Text
+                  style={[
+                    styles.panelDesc,
+                    {
+                      color:
+                        theme.colors.textSecondary,
+                    },
+                  ]}
+                >
+                  This work order is assigned
+                  to you. Inspect the issue and
+                  start the repair when you arrive
+                  at the location.
+                </Text>
+
+                <Button
+                  title="Commence On-Site Work"
+                  onPress={
+                    handleStartWork
+                  }
+                  variant="primary"
+                  loading={updating}
+                  fullWidth
+                  icon={
+                    <Play
+                      size={16}
+                      color="#FFFFFF"
+                    />
+                  }
+                />
+              </View>
+            )}
 
             {/* IN PROGRESS */}
 
-            {complaint.status ===
-              'IN_PROGRESS' && (
+            {isInProgress && (
+              <View
+                style={
+                  styles.actionPanel
+                }
+              >
                 <View
-                  style={styles.actionPanel}
+                  style={
+                    styles.progressBanner
+                  }
                 >
+                  <View
+                    style={[
+                      styles.progressDot,
+                      {
+                        backgroundColor:
+                          theme.status
+                            .inProgress,
+                      },
+                    ]}
+                  />
+
                   <Text
                     style={[
-                      styles.panelDesc,
+                      styles.progressText,
                       {
                         color:
-                          theme.colors
-                            .textSecondary,
+                          theme.status
+                            .inProgress,
                       },
                     ]}
                   >
-                    Work is currently in
-                    progress. Enter your repair
-                    summary notes to close this
-                    ticket:
+                    WORK IN PROGRESS
                   </Text>
+                </View>
 
-                  <TextInput
-                    placeholder="e.g. Replaced leaking valve and tested pressure seal."
-                    placeholderTextColor={
-                      theme.colors.textMuted
+                <Text
+                  style={[
+                    styles.panelDesc,
+                    {
+                      color:
+                        theme.colors.textSecondary,
+                    },
+                  ]}
+                >
+                  Complete the repair, add a
+                  resolution note, and optionally
+                  attach a verification photo.
+                </Text>
+
+                <Text
+                  style={[
+                    styles.inputLabel,
+                    {
+                      color:
+                        theme.colors.textSecondary,
+                    },
+                  ]}
+                >
+                  RESOLUTION NOTE
+                </Text>
+
+                <TextInput
+                  placeholder="e.g. Replaced leaking valve and tested pressure seal."
+                  placeholderTextColor={
+                    theme.colors.textMuted
+                  }
+                  value={
+                    resolutionNotes
+                  }
+                  onChangeText={
+                    setResolutionNotes
+                  }
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  style={[
+                    styles.resolutionInput,
+                    {
+                      borderColor:
+                        theme.colors.border,
+                      backgroundColor:
+                        theme.colors
+                          .inputBackground,
+                      color:
+                        theme.colors.textPrimary,
+                    },
+                  ]}
+                />
+
+                {/* PHOTO */}
+
+                <Text
+                  style={[
+                    styles.inputLabel,
+                    {
+                      color:
+                        theme.colors.textSecondary,
+                    },
+                  ]}
+                >
+                  VERIFICATION PHOTO
+                </Text>
+
+                {resolutionImage ? (
+                  <View
+                    style={
+                      styles.resolvedPhotoContainer
                     }
-                    value={resolutionNotes}
-                    onChangeText={
-                      setResolutionNotes
+                  >
+                    <Image
+                      source={{
+                        uri: resolutionImage,
+                      }}
+                      style={
+                        styles.resolutionImage
+                      }
+                    />
+
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={
+                        removeResolutionImage
+                      }
+                      style={[
+                        styles.removePhotoButton,
+                        {
+                          backgroundColor:
+                            theme.colors.accent,
+                        },
+                      ]}
+                    >
+                      <X
+                        size={16}
+                        color="#FFFFFF"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    activeOpacity={0.75}
+                    onPress={
+                      pickResolutionImage
                     }
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
                     style={[
-                      styles.resolutionInput,
+                      styles.addPhotoButton,
                       {
                         borderColor:
                           theme.colors.border,
                         backgroundColor:
                           theme.colors
-                            .inputBackground,
-                        color:
-                          theme.colors
-                            .textPrimary,
+                            .surfaceSubtle,
                       },
                     ]}
-                  />
-
-                  {/* VERIFICATION PHOTO */}
-
-                  <View
-                    style={
-                      styles.resolutionPhotoRow
-                    }
                   >
-                    {resolutionImage ? (
-                      <View
-                        style={
-                          styles.resolvedThumbBox
-                        }
-                      >
-                        <Image
-                          source={{
-                            uri: resolutionImage,
-                          }}
-                          style={
-                            styles.resolvedThumb
-                          }
-                        />
-
-                        <TouchableOpacity
-                          onPress={
-                            removeResolutionImage
-                          }
-                          style={
-                            styles.removePhotoBtn
-                          }
-                          activeOpacity={0.8}
-                        >
-                          <X
-                            size={12}
-                            color="#FFFFFF"
-                          />
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        activeOpacity={0.75}
-                        onPress={
-                          pickResolutionImage
-                        }
-                        style={[
-                          styles.addResolutionPhotoBtn,
-                          {
-                            borderColor:
-                              theme.colors
-                                .border,
-                            backgroundColor:
-                              theme.colors
-                                .surfaceSubtle,
-                          },
-                        ]}
-                      >
-                        <Camera
-                          size={16}
-                          color={
-                            theme.colors.accent
-                          }
-                        />
-
-                        <Text
-                          style={[
-                            styles.addPhotoText,
-                            {
-                              color:
-                                theme.colors
-                                  .textPrimary,
-                            },
-                          ]}
-                        >
-                          Attach Verification
-                          Photo
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  <Button
-                    title="Mark as Resolved & Complete"
-                    onPress={
-                      handleResolveWork
-                    }
-                    variant="primary"
-                    loading={updating}
-                    fullWidth
-                    icon={
-                      <CheckCircle2
-                        size={16}
-                        color="#FFFFFF"
-                      />
-                    }
-                    style={{
-                      backgroundColor:
-                        theme.status.resolved,
-                      borderColor:
-                        theme.status.resolved,
-                    }}
-                  />
-                </View>
-              )}
-
-            {/* RESOLVED */}
-
-            {complaint.status ===
-              'RESOLVED' && (
-                <View
-                  style={
-                    styles.resolvedBanner
-                  }
-                >
-                  <CheckCircle2
-                    size={24}
-                    color={
-                      theme.status.resolved
-                    }
-                  />
-
-                  <View
-                    style={
-                      styles.resolvedContent
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.resolvedTitle,
-                        {
-                          color:
-                            theme.status
-                              .resolved,
-                        },
-                      ]}
-                    >
-                      WORK VERIFIED & COMPLETED
-                    </Text>
+                    <Camera
+                      size={17}
+                      color={
+                        theme.colors.accent
+                      }
+                    />
 
                     <Text
                       style={[
-                        styles.resolvedDesc,
+                        styles.addPhotoText,
                         {
                           color:
                             theme.colors
@@ -824,19 +886,154 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                         },
                       ]}
                     >
-                      {complaint.resolutionNotes ||
-                        'Repair executed successfully.'}
+                      Attach Verification Photo
                     </Text>
-                  </View>
+                  </TouchableOpacity>
+                )}
+
+                {/* RESOLVE */}
+
+                <Button
+                  title="Mark as Resolved & Complete"
+                  onPress={
+                    handleResolveWork
+                  }
+                  variant="primary"
+                  loading={updating}
+                  fullWidth
+                  icon={
+                    <CheckCircle2
+                      size={17}
+                      color="#FFFFFF"
+                    />
+                  }
+                  style={{
+                    backgroundColor:
+                      theme.status.resolved,
+                    borderColor:
+                      theme.status.resolved,
+                    marginTop: 14,
+                  }}
+                />
+              </View>
+            )}
+
+            {/* RESOLVED */}
+
+            {isResolved && (
+              <View
+                style={[
+                  styles.resolvedBanner,
+                  {
+                    borderColor:
+                      theme.status.resolved,
+                    backgroundColor:
+                      theme.colors
+                        .surfaceSubtle,
+                  },
+                ]}
+              >
+                <CheckCircle2
+                  size={26}
+                  color={
+                    theme.status.resolved
+                  }
+                />
+
+                <View
+                  style={
+                    styles.resolvedContent
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.resolvedTitle,
+                      {
+                        color:
+                          theme.status
+                            .resolved,
+                      },
+                    ]}
+                  >
+                    WORK VERIFIED & COMPLETED
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.resolvedDesc,
+                      {
+                        color:
+                          theme.colors
+                            .textPrimary,
+                      },
+                    ]}
+                  >
+                    {complaint.resolutionNotes ||
+                      'Repair completed successfully.'}
+                  </Text>
+
+                  {complaint.resolvedAt && (
+                    <Text
+                      style={[
+                        styles.resolvedDate,
+                        {
+                          color:
+                            theme.colors
+                              .textMuted,
+                        },
+                      ]}
+                    >
+                      Resolved on{' '}
+                      {new Date(
+                        complaint.resolvedAt
+                      ).toLocaleString()}
+                    </Text>
+                  )}
                 </View>
-              )}
+              </View>
+            )}
+
           </Card>
 
-          {/* ----------------------------------------
-              TIMELINE
-          ----------------------------------------- */}
+          {/* RESOLUTION PHOTO */}
 
-          <Card style={styles.sectionCard}>
+          {isResolved &&
+            complaint.resolutionImage && (
+              <Card
+                style={
+                  styles.sectionCard
+                }
+              >
+                <Text
+                  style={[
+                    styles.fieldLabel,
+                    {
+                      color:
+                        theme.colors
+                          .textSecondary,
+                    },
+                  ]}
+                >
+                  VERIFICATION PHOTO
+                </Text>
+
+                <Image
+                  source={{
+                    uri:
+                      complaint.resolutionImage,
+                  }}
+                  style={
+                    styles.finalResolutionImage
+                  }
+                />
+              </Card>
+            )}
+
+          {/* TIMELINE */}
+
+          <Card
+            style={styles.sectionCard}
+          >
             <Text
               style={[
                 styles.fieldLabel,
@@ -850,20 +1047,18 @@ export const TaskDetailScreen = ({ route, navigation }) => {
             </Text>
 
             <TimelineView
-              timeline={
-                complaint.timeline
-              }
+              timeline={timeline}
               currentStatus={
                 complaint.status
               }
             />
           </Card>
 
-          {/* ----------------------------------------
-              COMMENTS / WORK LOG
-          ----------------------------------------- */}
+          {/* COMMENTS */}
 
-          <Card style={styles.sectionCard}>
+          <Card
+            style={styles.sectionCard}
+          >
             <Text
               style={[
                 styles.fieldLabel,
@@ -874,16 +1069,29 @@ export const TaskDetailScreen = ({ route, navigation }) => {
               ]}
             >
               WORK LOG & COMMENTS (
-              {complaint.comments.length}
+              {comments.length}
               )
             </Text>
 
-            <View
-              style={styles.commentsList}
-            >
-              {complaint.comments.length >
-              0 ? (
-                complaint.comments.map(
+            {comments.length === 0 ? (
+              <Text
+                style={[
+                  styles.noComments,
+                  {
+                    color:
+                      theme.colors.textMuted,
+                  },
+                ]}
+              >
+                No internal notes yet.
+              </Text>
+            ) : (
+              <View
+                style={
+                  styles.commentsList
+                }
+              >
+                {comments.map(
                   (comment) => (
                     <View
                       key={comment.id}
@@ -914,10 +1122,8 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                             },
                           ]}
                         >
-                          {comment.authorName}{' '}
-                          (
-                          {comment.authorRole.toUpperCase()}
-                          )
+                          {comment.authorName ||
+                            'Technician'}
                         </Text>
 
                         <Text
@@ -930,15 +1136,19 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                             },
                           ]}
                         >
-                          {new Date(
-                            comment.timestamp
-                          ).toLocaleTimeString(
-                            [],
-                            {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            }
-                          )}
+                          {comment.timestamp
+                            ? new Date(
+                                comment.timestamp
+                              ).toLocaleTimeString(
+                                [],
+                                {
+                                  hour:
+                                    '2-digit',
+                                  minute:
+                                    '2-digit',
+                                }
+                              )
+                            : ''}
                         </Text>
                       </View>
 
@@ -952,31 +1162,20 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                           },
                         ]}
                       >
-                        {comment.message}
+                        {comment.message ||
+                          comment.comment ||
+                          ''}
                       </Text>
                     </View>
                   )
-                )
-              ) : (
-                <Text
-                  style={[
-                    styles.noComments,
-                    {
-                      color:
-                        theme.colors
-                          .textMuted,
-                    },
-                  ]}
-                >
-                  No work log entries yet.
-                </Text>
-              )}
-            </View>
-
-            {/* ADD COMMENT */}
+                )}
+              </View>
+            )}
 
             <View
-              style={styles.addCommentRow}
+              style={
+                styles.addCommentRow
+              }
             >
               <TextInput
                 placeholder="Post an internal technician note..."
@@ -987,6 +1186,7 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                 onChangeText={
                   setCommentText
                 }
+                multiline
                 style={[
                   styles.commentInput,
                   {
@@ -1000,10 +1200,6 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                         .inputBackground,
                   },
                 ]}
-                returnKeyType="send"
-                onSubmitEditing={
-                  handleSendComment
-                }
               />
 
               <TouchableOpacity
@@ -1011,37 +1207,34 @@ export const TaskDetailScreen = ({ route, navigation }) => {
                 onPress={
                   handleSendComment
                 }
-                disabled={!commentText.trim()}
+                disabled={
+                  !commentText.trim()
+                }
                 style={[
-                  styles.sendBtn,
+                  styles.sendButton,
                   {
                     backgroundColor:
                       theme.colors.accent,
                     opacity:
                       commentText.trim()
                         ? 1
-                        : 0.5,
+                        : 0.45,
                   },
                 ]}
               >
                 <Send
-                  size={16}
+                  size={17}
                   color="#FFFFFF"
                 />
               </TouchableOpacity>
             </View>
           </Card>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
-
-/*
- * ====================================================
- * STYLES
- * ====================================================
- */
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -1106,7 +1299,7 @@ const styles = StyleSheet.create({
     fontSize:
       Typography.sizes.micro,
     letterSpacing: 0.8,
-    marginBottom: 6,
+    marginBottom: 8,
   },
 
   descriptionText: {
@@ -1118,7 +1311,7 @@ const styles = StyleSheet.create({
   },
 
   photosSection: {
-    marginTop: 16,
+    marginTop: 14,
   },
 
   attachedImage: {
@@ -1138,6 +1331,7 @@ const styles = StyleSheet.create({
 
   studentInfo: {
     flex: 1,
+    marginRight: 12,
   },
 
   studentName: {
@@ -1152,7 +1346,7 @@ const styles = StyleSheet.create({
       Typography.body,
     fontSize:
       Typography.sizes.caption,
-    marginTop: 2,
+    marginTop: 3,
   },
 
   studentPhone: {
@@ -1160,22 +1354,16 @@ const styles = StyleSheet.create({
       Typography.mono,
     fontSize:
       Typography.sizes.micro,
-    marginTop: 2,
+    marginTop: 4,
   },
 
   callButton: {
-    minWidth: 72,
-    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent:
-      'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderWidth:
       Geometry.borderWidthThin,
-    borderRadius:
-      Geometry.radiusNone,
-    marginLeft: 12,
   },
 
   callText: {
@@ -1184,11 +1372,18 @@ const styles = StyleSheet.create({
     fontSize:
       Typography.sizes.micro,
     marginLeft: 6,
-    letterSpacing: 0.5,
   },
 
   actionPanel: {
     marginTop: 4,
+  },
+
+  statusHeading: {
+    fontFamily:
+      Typography.bodyBold,
+    fontSize:
+      Typography.sizes.bodyLarge,
+    marginBottom: 6,
   },
 
   panelDesc: {
@@ -1196,81 +1391,100 @@ const styles = StyleSheet.create({
       Typography.body,
     fontSize:
       Typography.sizes.caption,
-    marginBottom: 12,
-    lineHeight: 18,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+
+  progressBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
+  progressDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+
+  progressText: {
+    fontFamily:
+      Typography.monoBold,
+    fontSize:
+      Typography.sizes.micro,
+    letterSpacing: 0.8,
+  },
+
+  inputLabel: {
+    fontFamily:
+      Typography.monoBold,
+    fontSize:
+      Typography.sizes.micro,
+    letterSpacing: 0.7,
+    marginBottom: 7,
   },
 
   resolutionInput: {
+    minHeight: 100,
     borderWidth:
       Geometry.borderWidthThin,
-    borderRadius:
-      Geometry.radiusNone,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontFamily:
       Typography.body,
     fontSize:
       Typography.sizes.body,
-    minHeight: 88,
-    textAlignVertical:
-      'top',
-    marginBottom: 12,
-  },
-
-  resolutionPhotoRow: {
     marginBottom: 14,
   },
 
-  resolvedThumbBox: {
-    width: 80,
-    height: 80,
-    position: 'relative',
-  },
-
-  resolvedThumb: {
-    width: 80,
-    height: 80,
-    borderRadius:
-      Geometry.radiusNone,
-  },
-
-  removePhotoBtn: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor:
-      'rgba(0,0,0,0.7)',
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent:
-      'center',
-  },
-
-  addResolutionPhotoBtn: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  addPhotoButton: {
+    minHeight: 52,
     borderWidth:
       Geometry.borderWidthThin,
     borderStyle: 'dashed',
-    borderRadius:
-      Geometry.radiusNone,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginBottom: 4,
   },
 
   addPhotoText: {
     fontFamily:
-      Typography.monoMedium,
+      Typography.bodyMedium,
     fontSize:
-      Typography.sizes.micro,
+      Typography.sizes.caption,
     marginLeft: 8,
+  },
+
+  resolvedPhotoContainer: {
+    position: 'relative',
+    marginBottom: 4,
+  },
+
+  resolutionImage: {
+    width: '100%',
+    height: 180,
+    resizeMode: 'cover',
+  },
+
+  removePhotoButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   resolvedBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: 8,
+    borderWidth:
+      Geometry.borderWidthThin,
+    padding: 14,
   },
 
   resolvedContent: {
@@ -1282,8 +1496,9 @@ const styles = StyleSheet.create({
     fontFamily:
       Typography.monoBold,
     fontSize:
-      Typography.sizes.micro,
-    letterSpacing: 0.8,
+      Typography.sizes.caption,
+    letterSpacing: 0.7,
+    marginBottom: 7,
   },
 
   resolvedDesc: {
@@ -1291,53 +1506,21 @@ const styles = StyleSheet.create({
       Typography.body,
     fontSize:
       Typography.sizes.body,
-    lineHeight: 20,
-    marginTop: 4,
+    lineHeight: 21,
   },
 
-  commentsList: {
-    gap: 8,
-    marginBottom: 12,
-  },
-
-  commentItem: {
-    padding: 10,
-    borderWidth:
-      Geometry.borderWidthThin,
-    borderRadius:
-      Geometry.radiusNone,
-  },
-
-  commentHeader: {
-    flexDirection: 'row',
-    justifyContent:
-      'space-between',
-    marginBottom: 4,
-  },
-
-  commentAuthor: {
-    flex: 1,
-    fontFamily:
-      Typography.monoBold,
-    fontSize:
-      Typography.sizes.micro,
-    letterSpacing: 0.5,
-  },
-
-  commentTime: {
+  resolvedDate: {
     fontFamily:
       Typography.mono,
     fontSize:
       Typography.sizes.micro,
-    marginLeft: 8,
+    marginTop: 7,
   },
 
-  commentMessage: {
-    fontFamily:
-      Typography.body,
-    fontSize:
-      Typography.sizes.body,
-    lineHeight: 20,
+  finalResolutionImage: {
+    width: '100%',
+    height: 220,
+    resizeMode: 'cover',
   },
 
   noComments: {
@@ -1345,37 +1528,74 @@ const styles = StyleSheet.create({
       Typography.body,
     fontSize:
       Typography.sizes.caption,
-    marginBottom: 4,
+    marginBottom: 12,
+  },
+
+  commentsList: {
+    marginBottom: 12,
+  },
+
+  commentItem: {
+    borderWidth:
+      Geometry.borderWidthThin,
+    padding: 12,
+    marginBottom: 8,
+  },
+
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent:
+      'space-between',
+    marginBottom: 6,
+  },
+
+  commentAuthor: {
+    fontFamily:
+      Typography.bodyBold,
+    fontSize:
+      Typography.sizes.caption,
+    flex: 1,
+  },
+
+  commentTime: {
+    fontFamily:
+      Typography.mono,
+    fontSize:
+      Typography.sizes.micro,
+  },
+
+  commentMessage: {
+    fontFamily:
+      Typography.body,
+    fontSize:
+      Typography.sizes.caption,
+    lineHeight: 19,
   },
 
   addCommentRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
+    alignItems: 'flex-end',
   },
 
   commentInput: {
     flex: 1,
     minHeight: 48,
-    paddingHorizontal: 12,
+    maxHeight: 100,
     borderWidth:
       Geometry.borderWidthThin,
-    borderRadius:
-      Geometry.radiusNone,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontFamily:
       Typography.body,
     fontSize:
-      Typography.sizes.body,
+      Typography.sizes.caption,
   },
 
-  sendBtn: {
+  sendButton: {
     width: 48,
     height: 48,
-    alignItems: 'center',
-    justifyContent:
-      'center',
     marginLeft: 8,
-    borderRadius:
-      Geometry.radiusNone,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
