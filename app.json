@@ -11,21 +11,28 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "com.campusfix.app",
-      "adaptiveIcon": {
-        "backgroundColor": "#24262B",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false
-    },
+  "package": "com.campusfix.app",
+  "googleServicesFile": "./google-services.json",
+  "adaptiveIcon": {
+    "backgroundColor": "#24262B",
+    "foregroundImage": "./assets/android-icon-foreground.png",
+    "backgroundImage": "./assets/android-icon-background.png",
+    "monochromeImage": "./assets/android-icon-monochrome.png"
+  },
+  "predictiveBackGestureEnabled": false
+},
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font",
-      "expo-status-bar"
-    ]
+      "expo-status-bar",
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "944b0f01-2d35-45f7-8c8f-736e9ac5f0b7"
+      }
+    }
   }
 }
