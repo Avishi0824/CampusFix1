@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useContext,
@@ -43,10 +44,10 @@ export const ComplaintsProvider = ({ children }) => {
       setComplaints(fetchedComplaints);
       setStaff(fetchedStaff);
       setAnalytics(fetchedAnalytics);
-    } catch (e) {
+    } catch (error) {
       console.warn(
-        'Error refreshing complaints:',
-        e
+        '[Complaints] Error refreshing data:',
+        error
       );
     } finally {
       setIsLoading(false);
@@ -66,13 +67,17 @@ export const ComplaintsProvider = ({ children }) => {
   // --------------------------------------------------
 
   useEffect(() => {
+    console.log(
+      '[Realtime] Initializing channel for user:',
+      user?.id,
+      'Role:',
+      user?.role
+    );
+
     const channel = supabase
       .channel('campusfix-realtime')
 
-      // --------------------------------------------------
       // COMPLAINTS
-      // --------------------------------------------------
-
       .on(
         'postgres_changes',
         {
@@ -88,10 +93,7 @@ export const ComplaintsProvider = ({ children }) => {
 
           refreshComplaints();
 
-          // --------------------------------------------------
           // WARDEN NEW COMPLAINT NOTIFICATION
-          // --------------------------------------------------
-
           if (
             payload.eventType === 'INSERT' &&
             user?.role === 'WARDEN'
@@ -99,7 +101,7 @@ export const ComplaintsProvider = ({ children }) => {
             const complaint = payload.new;
 
             console.log(
-              '[Notifications] New complaint detected for Warden:',
+              '[Notifications] New complaint detected:',
               complaint?.id
             );
 
@@ -116,7 +118,7 @@ export const ComplaintsProvider = ({ children }) => {
               trigger: null,
             }).catch((error) => {
               console.error(
-                '[Notifications] Failed to show Warden notification:',
+                '[Notifications] Failed to show notification:',
                 error
               );
             });
@@ -124,10 +126,7 @@ export const ComplaintsProvider = ({ children }) => {
         }
       )
 
-      // --------------------------------------------------
       // COMMENTS
-      // --------------------------------------------------
-
       .on(
         'postgres_changes',
         {
@@ -145,10 +144,7 @@ export const ComplaintsProvider = ({ children }) => {
         }
       )
 
-      // --------------------------------------------------
       // TIMELINE
-      // --------------------------------------------------
-
       .on(
         'postgres_changes',
         {
@@ -166,11 +162,47 @@ export const ComplaintsProvider = ({ children }) => {
         }
       )
 
-      .subscribe((status) => {
+      // SUBSCRIPTION STATUS AND DETAILED ERRORS
+      .subscribe((status, error) => {
         console.log(
           '[Realtime] Subscription status:',
           status
         );
+
+        if (error) {
+          let errorDetails;
+
+          try {
+            errorDetails = JSON.stringify(
+              error,
+              Object.getOwnPropertyNames(error)
+            );
+          } catch {
+            errorDetails = String(error);
+          }
+
+          console.error(
+            '[Realtime] Subscription error details:',
+            errorDetails
+          );
+        }
+
+        if (
+          status === 'CHANNEL_ERROR' ||
+          status === 'TIMED_OUT'
+        ) {
+          console.error(
+            '[Realtime] Connection failed:',
+            status,
+            'Check the WebSocket connection and Supabase Realtime configuration.'
+          );
+        }
+
+        if (status === 'SUBSCRIBED') {
+          console.log(
+            '[Realtime] Successfully subscribed to complaint events.'
+          );
+        }
       });
 
     return () => {
@@ -178,81 +210,62 @@ export const ComplaintsProvider = ({ children }) => {
         '[Realtime] Removing CampusFix realtime channel'
       );
 
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channel).catch((error) => {
+        console.warn(
+          '[Realtime] Error removing channel:',
+          error
+        );
+      });
     };
-  }, [refreshComplaints, user?.role]);
+  }, [refreshComplaints, user?.id, user?.role]);
 
   // --------------------------------------------------
   // DUPLICATE COMPLAINT DETECTION
   // --------------------------------------------------
 
   const checkDuplicateComplaint = (input) => {
-    /*
-     * Only these complaints should prevent a new
-     * complaint from being considered a duplicate.
-     *
-     * Once a complaint is resolved, the student
-     * should be able to report the same problem again.
-     */
     const activeStatuses = [
       'REPORTED',
       'ASSIGNED',
       'IN_PROGRESS',
     ];
 
-    /*
-     * Convert text into simple keywords.
-     */
-    const normalizeText = (text) => {
-      return text
+    const normalizeText = (text = '') =>
+      text
         .toLowerCase()
         .replace(/[^\w\s]/g, '')
         .split(/\s+/)
         .filter((word) => word.length > 2);
-    };
 
-    /*
-     * Combine title + description.
-     */
     const newComplaintWords = new Set([
       ...normalizeText(input.title),
       ...normalizeText(input.description),
     ]);
 
-    /*
-     * Find possible duplicates based on:
-     *
-     * SAME HOSTEL
-     * SAME ROOM
-     * SAME CATEGORY
-     * ACTIVE STATUS
-     */
     const possibleDuplicates = complaints.filter(
       (complaint) => {
         const sameHostel =
-          complaint.hostelBlock
+          (complaint.hostelBlock || '')
             .trim()
             .toLowerCase() ===
-          input.hostelBlock
+          (input.hostelBlock || '')
             .trim()
             .toLowerCase();
 
         const sameRoom =
-          complaint.roomNumber
+          (complaint.roomNumber || '')
             .trim()
             .toLowerCase() ===
-          input.roomNumber
+          (input.roomNumber || '')
             .trim()
             .toLowerCase();
 
         const sameCategory =
-          complaint.category ===
-          input.category;
+          complaint.category === input.category;
 
-        const isActive =
-          activeStatuses.includes(
-            complaint.status
-          );
+        const isActive = activeStatuses.includes(
+          complaint.status
+        );
 
         return (
           sameHostel &&
@@ -266,69 +279,35 @@ export const ComplaintsProvider = ({ children }) => {
     let bestMatch;
     let bestScore = 0;
 
-    /*
-     * Compare the new complaint against every
-     * possible complaint from the same room/category.
-     */
-    possibleDuplicates.forEach(
-      (complaint) => {
-        const existingWords = new Set([
-          ...normalizeText(
-            complaint.title
-          ),
-          ...normalizeText(
-            complaint.description
-          ),
-        ]);
+    possibleDuplicates.forEach((complaint) => {
+      const existingWords = new Set([
+        ...normalizeText(complaint.title),
+        ...normalizeText(complaint.description),
+      ]);
 
-        let matchingWords = 0;
+      let matchingWords = 0;
 
-        newComplaintWords.forEach(
-          (word) => {
-            if (existingWords.has(word)) {
-              matchingWords++;
-            }
-          }
-        );
-
-        /*
-         * Calculate basic text similarity.
-         */
-        const textSimilarity =
-          newComplaintWords.size > 0
-            ? matchingWords /
-              newComplaintWords.size
-            : 0;
-
-        /*
-         * Score:
-         *
-         * Same room       = 40 points
-         * Same category   = 25 points
-         * Text similarity = up to 35 points
-         *
-         * Maximum = 100
-         */
-        const score =
-          40 +
-          25 +
-          textSimilarity * 35;
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = complaint;
+      newComplaintWords.forEach((word) => {
+        if (existingWords.has(word)) {
+          matchingWords++;
         }
-      }
-    );
+      });
 
-    /*
-     * 80+ means we consider it a duplicate.
-     */
-    const isDuplicate =
-      bestScore >= 80;
+      const textSimilarity =
+        newComplaintWords.size > 0
+          ? matchingWords / newComplaintWords.size
+          : 0;
+
+      const score = 65 + textSimilarity * 35;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = complaint;
+      }
+    });
 
     return {
-      isDuplicate,
+      isDuplicate: bestScore >= 80,
       confidence: Math.round(bestScore),
       existingComplaint: bestMatch,
     };
@@ -418,10 +397,7 @@ export const ComplaintsProvider = ({ children }) => {
   // ADD COMMENT
   // --------------------------------------------------
 
-  const addComment = async (
-    complaintId,
-    message
-  ) => {
+  const addComment = async (complaintId, message) => {
     if (!user) {
       throw new Error(
         'User must be logged in to add comment'
@@ -444,13 +420,12 @@ export const ComplaintsProvider = ({ children }) => {
   // GET COMPLAINT BY ID
   // --------------------------------------------------
 
-  const getComplaintById = (id) => {
-    return complaints.find(
-      (c) =>
-        c.id === id ||
-        c.ticketNumber === id
+  const getComplaintById = (id) =>
+    complaints.find(
+      (complaint) =>
+        complaint.id === id ||
+        complaint.ticketNumber === id
     );
-  };
 
   // --------------------------------------------------
   // PROVIDER
@@ -478,8 +453,7 @@ export const ComplaintsProvider = ({ children }) => {
 };
 
 export const useComplaints = () => {
-  const context =
-    useContext(ComplaintsContext);
+  const context = useContext(ComplaintsContext);
 
   if (!context) {
     throw new Error(

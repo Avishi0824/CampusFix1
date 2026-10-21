@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useContext,
@@ -10,37 +11,14 @@ import { StudentTheme, DarkTheme } from '../theme';
 
 const AuthContext = createContext(undefined);
 
-/*
- * Convert a Supabase profile into the user shape
- * expected throughout the existing CampusFix app.
- *
- * Supabase:
- *   hostel
- *   room
- *
- * Existing app:
- *   hostelBlock
- *   roomNumber
- *
- * We provide BOTH so existing screens continue
- * working without breaking.
- */
 const normalizeProfile = (profile) => {
-  if (!profile) {
-    return null;
-  }
+  if (!profile) return null;
 
   return {
     ...profile,
-
-    hostelBlock:
-      profile.hostel ?? profile.hostelBlock ?? null,
-
-    roomNumber:
-      profile.room ?? profile.roomNumber ?? null,
-
-    phone:
-      profile.phone ?? null,
+    hostelBlock: profile.hostel ?? profile.hostelBlock ?? null,
+    roomNumber: profile.room ?? profile.roomNumber ?? null,
+    phone: profile.phone ?? null,
   };
 };
 
@@ -48,61 +26,68 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Load the CampusFix profile for an authenticated user.
+  const loadProfile = async (authUserId) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('auth_user_id', authUserId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      setUser(normalizeProfile(data));
+      return data;
+    } catch (error) {
+      console.warn('Failed to load user profile:', error);
+      setUser(null);
+      return null;
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
-    const loadInitialSession = async () => {
+    const initialize = async () => {
       try {
         const {
           data: { session },
           error,
         } = await supabase.auth.getSession();
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
-        if (session?.user) {
+        if (mounted && session?.user) {
           await loadProfile(session.user.id);
         } else if (mounted) {
           setUser(null);
         }
       } catch (error) {
-        console.warn(
-          'Failed to load Supabase session:',
-          error
-        );
-
-        if (mounted) {
-          setUser(null);
-        }
+        console.warn('Failed to restore session:', error);
+        if (mounted) setUser(null);
       } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
+        if (mounted) setIsLoading(false);
       }
     };
 
-    loadInitialSession();
+    initialize();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (!mounted) {
-          return;
-        }
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
 
-        if (session?.user) {
-          setTimeout(() => {
-            loadProfile(session.user.id);
-          }, 0);
-        } else {
-          setUser(null);
-          setIsLoading(false);
-        }
+      if (session?.user) {
+        // Avoid awaiting Supabase queries inside this callback.
+        setTimeout(() => {
+          if (mounted) loadProfile(session.user.id);
+        }, 0);
+      } else {
+        setUser(null);
+        setIsLoading(false);
       }
-    );
+    });
 
     return () => {
       mounted = false;
@@ -110,102 +95,152 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  const loadProfile = async (authUserId) => {
-    try {
-      const {
-        data: profile,
-        error,
-      } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('auth_user_id', authUserId)
-        .single();
+  // Create the CampusFix profile after email verification.
+  const createCampusFixProfile = async (authUser) => {
+    const metadata = authUser.user_metadata || {};
+    const authUserId = authUser.id;
+    const email = (authUser.email || '').trim().toLowerCase();
 
-      if (error) {
-        throw error;
+    if (!email) {
+      throw new Error('The verified account has no email address.');
+    }
+
+    const name = (metadata.name || '').trim();
+    const role = metadata.role;
+
+    if (!name || !['STUDENT', 'TECHNICIAN', 'WARDEN'].includes(role)) {
+      throw new Error(
+        'Registration details are missing. Please contact support.'
+      );
+    }
+
+    // Avoid creating duplicate profiles if verification is retried.
+    const { data: existingProfile, error: lookupError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle();
+
+    if (lookupError) throw lookupError;
+
+    if (existingProfile) {
+      if (existingProfile.role !== role) {
+        throw new Error('Your account role does not match your profile.');
       }
 
-      setUser(normalizeProfile(profile));
-    } catch (error) {
-      console.warn(
-        'Failed to load user profile:',
-        error
-      );
+      if (role === 'TECHNICIAN') {
+        await ensureTechnicianRecord(existingProfile, metadata);
+      }
 
-      setUser(null);
+      const normalized = normalizeProfile(existingProfile);
+      setUser(normalized);
+      return normalized;
     }
+
+    const profileId =
+      `usr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const profileValues = {
+      id: profileId,
+      auth_user_id: authUserId,
+      name,
+      email,
+      role,
+      phone: metadata.phone || null,
+      hostel: metadata.hostel || null,
+      room: metadata.room || null,
+    };
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .insert(profileValues)
+      .select()
+      .single();
+
+    if (profileError) {
+      throw new Error(`Profile creation failed: ${profileError.message}`);
+    }
+
+    if (role === 'TECHNICIAN') {
+      try {
+        await ensureTechnicianRecord(profile, metadata);
+      } catch (error) {
+        // Keep the verified account and profile so this operation
+        // can be retried without requiring the user to sign up again.
+        throw new Error(
+          `Your account is verified, but technician setup failed: ${error.message}`
+        );
+      }
+    }
+
+    const normalized = normalizeProfile(profile);
+    setUser(normalized);
+    return normalized;
   };
 
-  /*
-   * LOGIN
-   */
-  const login = async (
-    email,
-    password,
-    expectedRole
-  ) => {
-    const cleanEmail = email
-      .trim()
-      .toLowerCase();
+  const ensureTechnicianRecord = async (profile, metadata) => {
+    const { data: existing, error: lookupError } = await supabase
+      .from('technicians')
+      .select('id')
+      .eq('profile_id', profile.id)
+      .maybeSingle();
 
-    const {
-      data,
-      error,
-    } = await supabase.auth.signInWithPassword({
+    if (lookupError) throw lookupError;
+    if (existing) return;
+
+    const specialization = metadata.specialization || null;
+
+    const { error } = await supabase.from('technicians').insert({
+      id: `tech_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      profile_id: profile.id,
+      specialization,
+      specialization_label: specialization,
+      active_tasks_count: 0,
+      rating: 0,
+      availability: 'AVAILABLE',
+    });
+
+    if (error) throw error;
+  };
+
+  // LOGIN
+  const login = async (email, password, expectedRole) => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password,
     });
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
+    if (!data?.user) throw new Error('Login failed. No user returned.');
 
-    if (!data?.user) {
-      throw new Error(
-        'Login failed. No user returned.'
-      );
-    }
-
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('auth_user_id', data.user.id)
-      .single();
+      .maybeSingle();
 
     if (profileError || !profile) {
       await supabase.auth.signOut();
-
       throw new Error(
         'Your account is not linked to a CampusFix profile.'
       );
     }
 
-    /*
-     * Prevent a user from selecting one role
-     * and logging in with another role's account.
-     */
     if (profile.role !== expectedRole) {
       await supabase.auth.signOut();
-
       throw new Error(
         `This account is registered as ${profile.role}, not ${expectedRole}.`
       );
     }
 
-    const normalizedUser =
-      normalizeProfile(profile);
-
-    setUser(normalizedUser);
-
-    return normalizedUser;
+    const normalized = normalizeProfile(profile);
+    setUser(normalized);
+    return normalized;
   };
 
-  /*
-   * SIGN UP
-   */
+  // SIGN UP: request verification; do not create the profile yet.
   const signup = async ({
     name,
     email,
@@ -216,19 +251,10 @@ export const AuthProvider = ({ children }) => {
     room,
     specialization,
   }) => {
-    const cleanEmail = email
-      .trim()
-      .toLowerCase();
-
+    const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
 
-    /*
-     * Create Supabase Auth account.
-     */
-    const {
-      data,
-      error,
-    } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
       options: {
@@ -238,146 +264,76 @@ export const AuthProvider = ({ children }) => {
           phone: phone?.trim() || null,
           hostel: hostel?.trim() || null,
           room: room?.trim() || null,
-          specialization:
-            specialization?.trim() || null,
+          specialization: specialization?.trim() || null,
         },
       },
     });
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
+    if (!data?.user) throw new Error('Account creation failed.');
 
-    if (!data?.user) {
-      throw new Error(
-        'Account creation failed.'
-      );
-    }
-
-    /*
-     * Confirm email is currently disabled in
-     * your Supabase project, so a session should
-     * be returned immediately.
-     */
     if (!data.session) {
-      throw new Error(
-        'Account created. Please confirm your email and then log in.'
-      );
-    }
-
-    const authUserId = data.user.id;
-
-    /*
-     * Generate a unique CampusFix profile ID.
-     */
-    const profileId =
-      `usr_${Date.now()}_${Math.random()
-        .toString(36)
-        .substring(2, 8)}`;
-
-    /*
-     * Create the CampusFix profile.
-     */
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabase
-      .from('profiles')
-      .insert({
-        id: profileId,
-        auth_user_id: authUserId,
-        name: cleanName,
+      return {
+        requiresVerification: true,
         email: cleanEmail,
-        role,
-        phone: phone?.trim() || null,
-        hostel: hostel?.trim() || null,
-        room: room?.trim() || null,
-      })
-      .select()
-      .single();
-
-    if (profileError) {
-      await supabase.auth.signOut();
-
-      throw new Error(
-        `Profile creation failed: ${profileError.message}`
-      );
+      };
     }
 
-    /*
-     * Technicians also need a record in the
-     * technicians table.
-     */
-    if (role === 'TECHNICIAN') {
-      const technicianId =
-        `tech_${Date.now()}_${Math.random()
-          .toString(36)
-          .substring(2, 8)}`;
-
-      const {
-        error: technicianError,
-      } = await supabase
-        .from('technicians')
-        .insert({
-          id: technicianId,
-          profile_id: profile.id,
-          specialization:
-            specialization?.trim() || null,
-          specialization_label:
-            specialization?.trim() || null,
-          active_tasks_count: 0,
-          rating: 0,
-          availability: 'AVAILABLE',
-        });
-
-      if (technicianError) {
-        /*
-         * Remove the auth session if technician
-         * profile creation fails.
-         */
-        await supabase.auth.signOut();
-
-        throw new Error(
-          `Technician profile creation failed: ${technicianError.message}`
-        );
-      }
-    }
-
-    const normalizedUser =
-      normalizeProfile(profile);
-
-    setUser(normalizedUser);
-
-    return normalizedUser;
+    // If email confirmation is disabled, Supabase returns a session.
+    // Keep the behavior safe if the project setting changes.
+    return {
+      requiresVerification: false,
+      email: cleanEmail,
+      user: await createCampusFixProfile(data.user),
+    };
   };
 
-  /*
-   * LOGOUT
-   */
-  const logout = async () => {
-    try {
-      const { error } =
-        await supabase.auth.signOut();
+  // VERIFY SIGNUP OTP
+  const verifySignupOtp = async (email, token) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanToken = token.trim();
 
-      if (error) {
-        throw error;
-      }
-
-      setUser(null);
-    } catch (error) {
-      console.warn(
-        'Logout failed:',
-        error
-      );
+    if (!/^\d{6,8}$/.test(cleanToken)) {
+      throw new Error('Enter the verification code from your email.');
     }
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'signup',
+    });
+
+    if (error) throw error;
+    if (!data?.user) {
+      throw new Error('Email verification failed. Please try again.');
+    }
+
+    return createCampusFixProfile(data.user);
+  };
+
+  // RESEND SIGNUP OTP
+  const resendSignupOtp = async (email) => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: cleanEmail,
+    });
+
+    if (error) throw error;
+  };
+
+  // LOGOUT
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) throw error;
+    setUser(null);
   };
 
   const currentRole = user?.role || null;
-
   const currentTheme =
-    currentRole === 'STUDENT'
-      ? StudentTheme
-      : DarkTheme;
+    currentRole === 'STUDENT' ? StudentTheme : DarkTheme;
 
   return (
     <AuthContext.Provider
@@ -388,6 +344,8 @@ export const AuthProvider = ({ children }) => {
         isLoading,
         login,
         signup,
+        verifySignupOtp,
+        resendSignupOtp,
         logout,
       }}
     >
@@ -400,9 +358,7 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
 
   if (!context) {
-    throw new Error(
-      'useAuth must be used within an AuthProvider'
-    );
+    throw new Error('useAuth must be used within an AuthProvider');
   }
 
   return context;

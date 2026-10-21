@@ -1,7 +1,5 @@
-import React, {
-  useEffect,
-} from 'react';
 
+import { useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +9,6 @@ import {
 
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 
@@ -42,17 +39,9 @@ import {
   useAuth,
 } from './src/context/AuthContext';
 
-import {
-  ComplaintsProvider,
-} from './src/context/ComplaintsContext';
-
-import {
-  RootNavigator,
-} from './src/navigation/RootNavigator';
-
-import {
-  supabase,
-} from './src/services/supabase';
+import { ComplaintsProvider } from './src/context/ComplaintsContext';
+import { RootNavigator } from './src/navigation/RootNavigator';
+import { supabase } from './src/services/supabase';
 
 // --------------------------------------------------
 // NOTIFICATION HANDLER
@@ -73,81 +62,91 @@ Notifications.setNotificationHandler({
 
 const registerForPushNotificationsAsync = async () => {
   try {
-    // Android notification channel
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync(
         'campusfix-default',
         {
           name: 'CampusFix Notifications',
-          importance:
-            Notifications.AndroidImportance.MAX,
+          importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
         }
       );
     }
 
-    // Check existing permission
-    const {
-      status: existingStatus,
-    } = await Notifications.getPermissionsAsync();
+    const { status: existingStatus } =
+      await Notifications.getPermissionsAsync();
 
     let finalStatus = existingStatus;
 
-    // Request permission if needed
     if (existingStatus !== 'granted') {
-      const {
-        status,
-      } = await Notifications.requestPermissionsAsync();
+      const { status } =
+        await Notifications.requestPermissionsAsync();
 
       finalStatus = status;
     }
 
     if (finalStatus !== 'granted') {
-      console.warn(
-        '[Notifications] Permission not granted'
-      );
-
+      console.warn('[Notifications] Permission not granted');
       return null;
     }
 
-    // Get EAS project ID
     const projectId =
       Constants?.expoConfig?.extra?.eas?.projectId ??
       Constants?.easConfig?.projectId;
 
     if (!projectId) {
-      console.error(
-        '[Notifications] EAS project ID not found'
-      );
-
+      console.error('[Notifications] EAS project ID not found');
       return null;
     }
 
-    console.log(
-      '[Notifications] EAS Project ID:',
-      projectId
-    );
+    console.log('[Notifications] EAS Project ID:', projectId);
 
-    // Get Expo Push Token
-    const token =
-      await Notifications.getExpoPushTokenAsync({
-        projectId,
-      });
+    const token = await Notifications.getExpoPushTokenAsync({
+      projectId,
+    });
 
-    console.log(
-      '[Notifications] Expo Push Token:',
-      token.data
-    );
+    console.log('[Notifications] Expo Push Token generated');
 
     return token.data;
   } catch (error) {
-    console.error(
-      '[Notifications] Registration failed:',
-      error
-    );
-
+    console.error('[Notifications] Registration failed:', error);
     return null;
   }
+};
+
+// --------------------------------------------------
+// SAVE PUSH TOKEN THROUGH SECURE DATABASE FUNCTION
+// --------------------------------------------------
+
+const savePushToken = async (userId, token) => {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) throw sessionError;
+
+  if (!session) {
+    throw new Error('No active Supabase Auth session');
+  }
+
+  console.log(
+    '[Notifications] Authenticated Supabase user:',
+    session.user.id
+  );
+
+  const { error } = await supabase.rpc('register_push_token', {
+    p_user_id: userId,
+    p_token: token,
+    p_platform: Platform.OS,
+  });
+
+  if (error) throw error;
+
+  console.log(
+    '[Notifications] Push token saved for user:',
+    userId
+  );
 };
 
 // --------------------------------------------------
@@ -157,92 +156,66 @@ const registerForPushNotificationsAsync = async () => {
 const NotificationSetup = () => {
   const { user } = useAuth();
 
- console.log(
-  '[Notifications] Current user ID:',
-  user?.id
-);
-
   useEffect(() => {
-    // Don't register a push token until
-    // the CampusFix user is available.
-    if (!user?.id) {
-      return;
-    }
+    if (!user?.id) return;
 
+    let cancelled = false;
     let notificationListener;
     let responseListener;
 
     const setupNotifications = async () => {
-      const token =
-        await registerForPushNotificationsAsync();
+      const token = await registerForPushNotificationsAsync();
 
-      if (!token) {
-        return;
-      }
+      if (!token || cancelled) return;
 
       console.log(
-        '[Notifications] Saving push token for user:',
+        '[Notifications] Saving push token for profile:',
         user.id
       );
 
-      const {
-        error,
-      } = await supabase
-        .from('push_tokens')
-        .upsert(
-          {
-            user_id: user.id,
-            expo_push_token: token,
-            platform: Platform.OS,
-            updated_at:
-              new Date().toISOString(),
-          },
-          {
-            onConflict:
-              'expo_push_token',
-          }
-        );
+      try {
+        await savePushToken(user.id, token);
+      } catch (error) {
+        if (cancelled) return;
 
-      if (error) {
         console.error(
           '[Notifications] Failed to save push token:',
-          error
+          JSON.stringify({
+            code: error?.code,
+            message: error?.message ?? String(error),
+            details: error?.details,
+            hint: error?.hint,
+          })
         );
-
-        return;
       }
-
-      console.log(
-        '[Notifications] Push token saved for user:',
-        user.id
-      );
     };
 
-    setupNotifications();
+    setupNotifications().catch((error) => {
+      console.error('[Notifications] Setup failed:', error);
+    });
 
-    // Notification received while app is open
     notificationListener =
       Notifications.addNotificationReceivedListener(
         (notification) => {
           console.log(
             '[Notifications] Received:',
-            notification
+            notification.request.content.title
           );
         }
       );
 
-    // Notification tapped/opened
     responseListener =
       Notifications.addNotificationResponseReceivedListener(
         (response) => {
           console.log(
             '[Notifications] Notification opened:',
-            response
+            response.notification.request.content.data
           );
         }
       );
 
     return () => {
+      cancelled = true;
       notificationListener?.remove();
       responseListener?.remove();
     };
@@ -261,15 +234,7 @@ const MainApp = () => {
   return (
     <>
       <NotificationSetup />
-
-      <StatusBar
-        style={
-          theme.isDark
-            ? 'light'
-            : 'dark'
-        }
-      />
-
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <RootNavigator />
     </>
   );
@@ -286,19 +251,13 @@ const FontLoadingScreen = () => {
     <View
       style={[
         styles.loadingContainer,
-        {
-          backgroundColor:
-            theme.colors.background,
-        },
+        { backgroundColor: theme.colors.background },
       ]}
     >
       <Text
         style={[
           styles.loadingTitle,
-          {
-            color:
-              theme.colors.textPrimary,
-          },
+          { color: theme.colors.textPrimary },
         ]}
       >
         CAMPUSFIX
@@ -307,10 +266,7 @@ const FontLoadingScreen = () => {
       <Text
         style={[
           styles.loadingText,
-          {
-            color:
-              theme.colors.textSecondary,
-          },
+          { color: theme.colors.textSecondary },
         ]}
       >
         Loading design assets...
@@ -330,12 +286,10 @@ export default function App() {
     PlayfairDisplay_700Bold,
     PlayfairDisplay_800ExtraBold,
     PlayfairDisplay_900Black,
-
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
     JetBrainsMono_700Bold,
@@ -345,11 +299,7 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <ComplaintsProvider>
-          {fontsLoaded ? (
-            <MainApp />
-          ) : (
-            <FontLoadingScreen />
-          )}
+          {fontsLoaded ? <MainApp /> : <FontLoadingScreen />}
         </ComplaintsProvider>
       </AuthProvider>
     </SafeAreaProvider>
@@ -369,16 +319,14 @@ const styles = StyleSheet.create({
   },
 
   loadingTitle: {
-    fontFamily:
-      'PlayfairDisplay_700Bold',
+    fontFamily: 'PlayfairDisplay_700Bold',
     fontSize: 32,
     letterSpacing: 1,
     marginBottom: 8,
   },
 
   loadingText: {
-    fontFamily:
-      'Inter_400Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 14,
   },
 });

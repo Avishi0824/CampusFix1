@@ -1,0 +1,38 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.118.0"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.118.0": "56fce2ec273698af8a739c03a005c4b2160e163e5d2c0ede05de7e9bd47e28b8"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@expo-google-fonts/inter@~0.4.2",
+        "npm:@expo-google-fonts/jetbrains-mono@~0.4.1",
+        "npm:@expo-google-fonts/playfair-display@~0.4.2",
+        "npm:@react-native-async-storage/async-storage@2.2.0",
+        "npm:@react-navigation/bottom-tabs@^7.20.0",
+        "npm:@react-navigation/native-stack@^7.20.0",
+        "npm:@react-navigation/native@^7.5.0",
+        "npm:@supabase/supabase-js@^2.117.2",
+        "npm:@types/react@~19.2.4",
+        "npm:expo-constants@~57.0.21",
+        "npm:expo-dev-client@~57.0.19",
+        "npm:expo-font@~57.0.4",
+        "npm:expo-haptics@~57.0.3",
+        "npm:expo-image-picker@~57.0.20",
+        "npm:expo-notifications@~57.0.22",
+        "npm:expo-status-bar@~57.0.1",
+        "npm:expo@~57.0.27",
+        "npm:lucide-react-native@^1.52.0",
+        "npm:react-native-safe-area-context@5.7",
+        "npm:react-native-screens@4.26",
+        "npm:react-native@0.86.3",
+        "npm:react@19.2.3",
+        "npm:typescript@~6.0.3"
+      ]
+    }
+  }
+}

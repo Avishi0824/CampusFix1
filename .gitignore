@@ -43,3 +43,11 @@ yarn-error.*
 .env
 firebase-service-account.json
 google-services.json
+
+
+# Supabase local temporary files
+supabase/.temp/
+
+# Local editor settings
+.vscode/
+

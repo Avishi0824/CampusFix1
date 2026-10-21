@@ -25,9 +25,11 @@ import { useAuth } from '../../context/AuthContext';
 import { Typography } from '../../theme';
 
 export const LoginScreen = () => {
-  const { login, signup } = useAuth();
+  const { login, signup, verifySignupOtp, resendSignupOtp } = useAuth();
 
   const [mode, setMode] = useState('login');
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [otp, setOtp] = useState('');
 
   const [selectedRole, setSelectedRole] =
     useState(null);
@@ -115,6 +117,8 @@ export const LoginScreen = () => {
     setHostel('');
     setRoom('');
     setSpecialization('');
+    setVerificationEmail('');
+    setOtp('');
     setErrorMessage('');
   };
 
@@ -300,17 +304,25 @@ export const LoginScreen = () => {
     setErrorMessage('');
 
     try {
-      await signup({
+      const result = await signup({
         name,
         email,
         password,
-        role:
-          selectedRole.toUpperCase(),
+        role: selectedRole.toUpperCase(),
         phone,
         hostel,
         room,
         specialization,
       });
+
+      if (result?.requiresVerification) {
+        setVerificationEmail(result.email || email.trim().toLowerCase());
+        setOtp('');
+        setMode('verify');
+        setErrorMessage(
+          'Check your email for the verification code. If it does not arrive, check spam or email delivery settings.'
+        );
+      }
     } catch (error) {
       console.log(
         'Signup error:',
@@ -359,11 +371,46 @@ export const LoginScreen = () => {
     }
   };
 
+  const handleVerifyOtp = async () => {
+    if (submitting) return;
+    if (!otp.trim()) {
+      setErrorMessage('Please enter the verification code from your email.');
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage('');
+    try {
+      await verifySignupOtp(verificationEmail, otp);
+    } catch (error) {
+      console.log('OTP verification error:', error);
+      setErrorMessage(error?.message || 'Unable to verify the code. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (submitting) return;
+
+    setSubmitting(true);
+    setErrorMessage('');
+    try {
+      await resendSignupOtp(verificationEmail);
+      setErrorMessage('A new verification code has been requested. Check your inbox and spam folder.');
+    } catch (error) {
+      console.log('Resend OTP error:', error);
+      setErrorMessage(error?.message || 'Unable to resend the code. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const getButtonText = () => {
     if (submitting) {
-      return mode === 'login'
-        ? 'Signing in...'
-        : 'Creating account...';
+      if (mode === 'login') return 'Signing in...';
+      if (mode === 'verify') return 'Verifying...';
+      return 'Creating account...';
     }
 
     if (!selectedRole) {
@@ -442,6 +489,62 @@ export const LoginScreen = () => {
             </Text>
           </View>
 
+          {mode === 'verify' ? (
+            <View style={styles.formSection}>
+              <Text style={styles.loginSectionTitle}>VERIFY YOUR EMAIL</Text>
+              <Text style={styles.roleDescription}>
+                Enter the verification code sent to {verificationEmail}.
+              </Text>
+              <TextInput
+                value={otp}
+                onChangeText={(value) => {
+                  setOtp(value.replace(/\\D/g, '').slice(0, 8));
+                  setErrorMessage('');
+                }}
+                placeholder="Email verification code"
+                placeholderTextColor="#687380"
+                keyboardType="number-pad"
+                autoCapitalize="none"
+                editable={!submitting}
+                maxLength={8}
+                style={styles.input}
+              />
+              {errorMessage ? (
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              ) : null}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                disabled={submitting}
+                onPress={handleVerifyOtp}
+                style={[styles.continueButton, { backgroundColor: '#E06A47' }]}
+              >
+                <Text style={[styles.continueText, styles.continueTextActive]}>
+                  {submitting ? 'Verifying...' : 'Verify Email'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={submitting}
+                onPress={handleResendOtp}
+                style={{ paddingVertical: 18, alignItems: 'center' }}
+              >
+                <Text style={styles.modeButtonTextActive}>Resend verification code</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={submitting}
+                onPress={() => {
+                  setMode('signup');
+                  setOtp('');
+                  setErrorMessage('');
+                }}
+                style={{ paddingVertical: 8, alignItems: 'center' }}
+              >
+                <Text style={styles.modeButtonText}>Back to registration</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+          <>
           {/* MODE TOGGLE */}
 
           <View
@@ -841,6 +944,8 @@ export const LoginScreen = () => {
             CAMPUSFIX V1.0 • HOSTEL
             RESIDENCE PORTAL
           </Text>
+          </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
