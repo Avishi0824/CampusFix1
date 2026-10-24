@@ -257,6 +257,104 @@ export const SupabaseApiService = {
     return this.getComplaintById(data.id);
   },
 
+  async updateComplaint(complaintId, input, student) {
+    // 1. Fetch current complaint to verify ownership and eligibility
+    const { data: current, error: fetchError } = await supabase
+      .from('complaints')
+      .select('id, student_id, status, assigned_technician_id')
+      .eq('id', complaintId)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!current) throw new Error('Complaint not found.');
+
+    if (student?.id && current.student_id !== student.id) {
+      throw new Error('You can only edit your own complaints.');
+    }
+
+    if (current.status !== 'REPORTED' || current.assigned_technician_id) {
+      throw new Error(
+        'This complaint cannot be edited because maintenance staff has already been assigned or started work.'
+      );
+    }
+
+    const now = new Date().toISOString();
+    const updates = {
+      title: input.title.trim(),
+      description: input.description.trim(),
+      category: input.category,
+      priority: input.priority,
+      hostel: input.hostelBlock.trim(),
+      room: input.roomNumber.trim(),
+      images: input.images || [],
+      updated_at: now,
+    };
+
+    const { data, error } = await supabase
+      .from('complaints')
+      .update(updates)
+      .eq('id', complaintId)
+      .eq('student_id', student.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    await supabase.from('complaint_timeline').insert({
+      complaint_id: complaintId,
+      status: 'REPORTED',
+      changed_by: student.id,
+      note: 'Complaint details updated by student.',
+    });
+
+    return this.getComplaintById(complaintId);
+  },
+
+  async cancelComplaint(complaintId, student) {
+    // 1. Fetch current complaint to verify ownership and eligibility
+    const { data: current, error: fetchError } = await supabase
+      .from('complaints')
+      .select('id, student_id, status, assigned_technician_id')
+      .eq('id', complaintId)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!current) throw new Error('Complaint not found.');
+
+    if (student?.id && current.student_id !== student.id) {
+      throw new Error('You can only cancel your own complaints.');
+    }
+
+    if (current.status !== 'REPORTED' || current.assigned_technician_id) {
+      throw new Error(
+        'This complaint cannot be cancelled because maintenance staff has already been assigned or started work.'
+      );
+    }
+
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('complaints')
+      .update({
+        status: 'CANCELLED',
+        updated_at: now,
+      })
+      .eq('id', complaintId)
+      .eq('student_id', student.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    await supabase.from('complaint_timeline').insert({
+      complaint_id: complaintId,
+      status: 'CANCELLED',
+      changed_by: student.id,
+      note: 'Complaint cancelled by student.',
+    });
+
+    return this.getComplaintById(complaintId);
+  },
+
   async updateComplaintStatus(
     complaintId,
     newStatus,
@@ -466,6 +564,7 @@ export const SupabaseApiService = {
       ASSIGNED: 0,
       IN_PROGRESS: 0,
       RESOLVED: 0,
+      CANCELLED: 0,
     };
 
     const categoryMap = {
@@ -488,15 +587,18 @@ export const SupabaseApiService = {
       statusCounts[c.status] =
         (statusCounts[c.status] || 0) + 1;
 
-      categoryMap[c.category] =
-        (categoryMap[c.category] || 0) + 1;
+      if (c.status !== 'CANCELLED') {
+        categoryMap[c.category] =
+          (categoryMap[c.category] || 0) + 1;
 
-      hostelMap[c.hostelBlock] =
-        (hostelMap[c.hostelBlock] || 0) + 1;
+        hostelMap[c.hostelBlock] =
+          (hostelMap[c.hostelBlock] || 0) + 1;
+      }
 
       if (
         c.priority === 'HIGH' &&
-        c.status !== 'RESOLVED'
+        c.status !== 'RESOLVED' &&
+        c.status !== 'CANCELLED'
       ) {
         highPriorityCount++;
       }
@@ -549,6 +651,8 @@ export const SupabaseApiService = {
         statusCounts.IN_PROGRESS,
       resolvedComplaints:
         statusCounts.RESOLVED,
+      cancelledComplaints:
+        statusCounts.CANCELLED,
       highPriorityCount,
       unassignedCount,
       avgResolutionHours: 3.4,

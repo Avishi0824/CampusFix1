@@ -1,10 +1,11 @@
 
-import { useEffect } from 'react';
+import React, { Component, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 
 import { StatusBar } from 'expo-status-bar';
@@ -41,7 +42,7 @@ import {
 
 import { ComplaintsProvider } from './src/context/ComplaintsContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
-import { supabase } from './src/services/supabase';
+import { supabase, supabaseConfigError } from './src/services/supabase';
 
 // --------------------------------------------------
 // NOTIFICATION HANDLER
@@ -119,34 +120,39 @@ const registerForPushNotificationsAsync = async () => {
 // --------------------------------------------------
 
 const savePushToken = async (userId, token) => {
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
+  try {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-  if (sessionError) throw sessionError;
+    if (sessionError) throw sessionError;
 
-  if (!session) {
-    throw new Error('No active Supabase Auth session');
+    if (!session) {
+      console.warn('[Notifications] No active Supabase Auth session');
+      return;
+    }
+
+    console.log(
+      '[Notifications] Authenticated Supabase user:',
+      session.user.id
+    );
+
+    const { error } = await supabase.rpc('register_push_token', {
+      p_user_id: userId,
+      p_token: token,
+      p_platform: Platform.OS,
+    });
+
+    if (error) throw error;
+
+    console.log(
+      '[Notifications] Push token saved for user:',
+      userId
+    );
+  } catch (error) {
+    console.warn('[Notifications] Could not save push token:', error?.message || error);
   }
-
-  console.log(
-    '[Notifications] Authenticated Supabase user:',
-    session.user.id
-  );
-
-  const { error } = await supabase.rpc('register_push_token', {
-    p_user_id: userId,
-    p_token: token,
-    p_platform: Platform.OS,
-  });
-
-  if (error) throw error;
-
-  console.log(
-    '[Notifications] Push token saved for user:',
-    userId
-  );
 };
 
 // --------------------------------------------------
@@ -180,12 +186,7 @@ const NotificationSetup = () => {
 
         console.error(
           '[Notifications] Failed to save push token:',
-          JSON.stringify({
-            code: error?.code,
-            message: error?.message ?? String(error),
-            details: error?.details,
-            hint: error?.hint,
-          })
+          error?.message || error
         );
       }
     };
@@ -234,9 +235,39 @@ const MainApp = () => {
   return (
     <>
       <NotificationSetup />
-      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+      <StatusBar style={theme?.isDark ? 'light' : 'dark'} />
       <RootNavigator />
     </>
+  );
+};
+
+// --------------------------------------------------
+// CONFIGURATION ERROR SCREEN
+// --------------------------------------------------
+
+const ConfigurationErrorScreen = ({ error }) => {
+  return (
+    <View style={styles.configErrorContainer}>
+      <Text style={styles.configBadge}>CONFIGURATION ERROR</Text>
+      <Text style={styles.configTitle}>CampusFix Setup</Text>
+      <View style={styles.configCard}>
+        <Text style={styles.configCardLabel}>Missing Environment Variable:</Text>
+        <Text style={styles.configCardError}>{error}</Text>
+      </View>
+      <Text style={styles.configInstructions}>
+        Please ensure your .env file contains valid credentials:
+      </Text>
+      <View style={styles.codeBox}>
+        <Text style={styles.codeText}>EXPO_PUBLIC_SUPABASE_URL=https://...</Text>
+        <Text style={styles.codeText}>EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_...</Text>
+      </View>
+      <Text style={styles.configFootnote}>
+        Then restart the Metro bundler with cache cleared:
+      </Text>
+      <View style={styles.codeBox}>
+        <Text style={styles.codeText}>npx expo start --clear</Text>
+      </View>
+    </View>
   );
 };
 
@@ -245,42 +276,57 @@ const MainApp = () => {
 // --------------------------------------------------
 
 const FontLoadingScreen = () => {
-  const { theme } = useAuth();
-
   return (
-    <View
-      style={[
-        styles.loadingContainer,
-        { backgroundColor: theme.colors.background },
-      ]}
-    >
-      <Text
-        style={[
-          styles.loadingTitle,
-          { color: theme.colors.textPrimary },
-        ]}
-      >
-        CAMPUSFIX
-      </Text>
-
-      <Text
-        style={[
-          styles.loadingText,
-          { color: theme.colors.textSecondary },
-        ]}
-      >
-        Loading design assets...
-      </Text>
+    <View style={styles.loadingContainer}>
+      <Text style={styles.loadingTitle}>CAMPUSFIX</Text>
+      <Text style={styles.loadingText}>Loading design assets...</Text>
     </View>
   );
 };
+
+// --------------------------------------------------
+// ROOT ERROR BOUNDARY
+// --------------------------------------------------
+
+class RootErrorBoundary extends Component {
+  state = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('[CampusFix] RootErrorBoundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorBadge}>RUNTIME RECOVERY</Text>
+          <Text style={styles.errorTitle}>Application Error</Text>
+          <Text style={styles.errorDescription}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => this.setState({ hasError: false, error: null })}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // --------------------------------------------------
 // APP
 // --------------------------------------------------
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     PlayfairDisplay_400Regular,
     PlayfairDisplay_600SemiBold,
     PlayfairDisplay_700Bold,
@@ -295,13 +341,21 @@ export default function App() {
     JetBrainsMono_700Bold,
   });
 
+  const isReady = fontsLoaded || !!fontError;
+
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <ComplaintsProvider>
-          {fontsLoaded ? <MainApp /> : <FontLoadingScreen />}
-        </ComplaintsProvider>
-      </AuthProvider>
+      <RootErrorBoundary>
+        {supabaseConfigError ? (
+          <ConfigurationErrorScreen error={supabaseConfigError} />
+        ) : (
+          <AuthProvider>
+            <ComplaintsProvider>
+              {isReady ? <MainApp /> : <FontLoadingScreen />}
+            </ComplaintsProvider>
+          </AuthProvider>
+        )}
+      </RootErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -316,17 +370,134 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+    backgroundColor: '#F3EEE4',
   },
 
   loadingTitle: {
-    fontFamily: 'PlayfairDisplay_700Bold',
     fontSize: 32,
-    letterSpacing: 1,
+    fontWeight: '800',
+    letterSpacing: 2,
     marginBottom: 8,
+    color: '#24262B',
   },
 
   loadingText: {
-    fontFamily: 'Inter_400Regular',
     fontSize: 14,
+    color: '#717684',
+  },
+
+  configErrorContainer: {
+    flex: 1,
+    backgroundColor: '#1A1C20',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+
+  configBadge: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+
+  configTitle: {
+    color: '#F9FAFB',
+    fontSize: 28,
+    fontWeight: '800',
+    marginBottom: 16,
+  },
+
+  configCard: {
+    backgroundColor: '#272A30',
+    padding: 16,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#EF4444',
+    marginBottom: 20,
+  },
+
+  configCardLabel: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+
+  configCardError: {
+    color: '#FCA5A5',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  configInstructions: {
+    color: '#D1D5DB',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+
+  configFootnote: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+
+  codeBox: {
+    backgroundColor: '#111215',
+    padding: 12,
+    borderRadius: 8,
+  },
+
+  codeText: {
+    color: '#34D399',
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+
+  errorContainer: {
+    flex: 1,
+    backgroundColor: '#1A1C20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+
+  errorBadge: {
+    color: '#F59E0B',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+
+  errorTitle: {
+    color: '#F9FAFB',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+
+  errorDescription: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+
+  retryButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
+

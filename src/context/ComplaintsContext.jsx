@@ -336,6 +336,51 @@ export const ComplaintsProvider = ({ children }) => {
   };
 
   // --------------------------------------------------
+  // UPDATE COMPLAINT (STUDENT EDIT)
+  // --------------------------------------------------
+
+  const updateComplaint = async (id, input) => {
+    if (!user) {
+      throw new Error(
+        'User must be logged in to update complaint'
+      );
+    }
+
+    const updated =
+      await SupabaseApiService.updateComplaint(
+        id,
+        input,
+        user
+      );
+
+    await refreshComplaints();
+
+    return updated;
+  };
+
+  // --------------------------------------------------
+  // CANCEL / DELETE COMPLAINT (STUDENT CANCEL)
+  // --------------------------------------------------
+
+  const cancelComplaint = async (id) => {
+    if (!user) {
+      throw new Error(
+        'User must be logged in to cancel complaint'
+      );
+    }
+
+    const updated =
+      await SupabaseApiService.cancelComplaint(
+        id,
+        user
+      );
+
+    await refreshComplaints();
+
+    return updated;
+  };
+
+  // --------------------------------------------------
   // UPDATE STATUS
   // --------------------------------------------------
 
@@ -440,6 +485,8 @@ export const ComplaintsProvider = ({ children }) => {
         isLoading,
         refreshComplaints,
         createComplaint,
+        updateComplaint,
+        cancelComplaint,
         checkDuplicateComplaint,
         updateStatus,
         assignTechnician,

@@ -10,6 +10,7 @@ import {
   Clock,
   Wrench,
   FileText,
+  XCircle,
 } from 'lucide-react-native';
 
 import { useAuth } from '../context/AuthContext';
@@ -61,6 +62,14 @@ export const TimelineView = ({
           <CheckCircle2
             size={14}
             color={iconColor}
+          />
+        );
+
+      case 'CANCELLED':
+        return (
+          <XCircle
+            size={14}
+            color="#94A3B8"
           />
         );
 

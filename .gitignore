@@ -17,6 +17,8 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+*.apk
+.base-template.apk
 
 # Metro
 .metro-health-check*
@@ -51,3 +53,7 @@ supabase/.temp/
 # Local editor settings
 .vscode/
 
+# Android build artifacts
+*.apk
+*.apk.idsig
+*.aab

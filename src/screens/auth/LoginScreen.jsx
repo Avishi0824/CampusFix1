@@ -207,6 +207,17 @@ export const LoginScreen = () => {
         setErrorMessage(
           error.message
         );
+      } else if (
+        message.includes(
+          'email not confirmed'
+        )
+      ) {
+        setVerificationEmail(email.trim().toLowerCase());
+        setOtp('');
+        setMode('verify');
+        setErrorMessage(
+          'Your email is not verified yet. Enter the verification code sent to your email.'
+        );
       } else {
         setErrorMessage(
           error?.message ||
@@ -498,7 +509,7 @@ export const LoginScreen = () => {
               <TextInput
                 value={otp}
                 onChangeText={(value) => {
-                  setOtp(value.replace(/\\D/g, '').slice(0, 8));
+                  setOtp(value.replace(/\D/g, '').slice(0, 8));
                   setErrorMessage('');
                 }}
                 placeholder="Email verification code"

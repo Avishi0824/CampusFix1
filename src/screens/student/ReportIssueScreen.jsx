@@ -35,41 +35,53 @@ import {
   getCategoryIcon,
 } from '../../components/CategoryChip';
 
-export const ReportIssueScreen = ({ navigation }) => {
+export const ReportIssueScreen = ({ route, navigation }) => {
   const { theme, user } = useAuth();
 
   const {
     createComplaint,
+    updateComplaint,
     checkDuplicateComplaint,
   } = useComplaints();
+
+  const complaintToEdit = route?.params?.complaintToEdit;
+  const isEditing = !!complaintToEdit;
 
   // =====================================================
   // FORM STATE
   // =====================================================
 
-  const [category, setCategory] =
-    useState('PLUMBING');
+  const [category, setCategory] = useState(
+    complaintToEdit?.category || 'PLUMBING'
+  );
 
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(
+    complaintToEdit?.title || ''
+  );
 
-  const [description, setDescription] =
-    useState('');
+  const [description, setDescription] = useState(
+    complaintToEdit?.description || ''
+  );
 
-  const [hostelBlock, setHostelBlock] =
-    useState(
-      user?.hostelBlock || 'Block B (Kaveri)'
-    );
+  const [hostelBlock, setHostelBlock] = useState(
+    complaintToEdit?.hostelBlock ||
+      user?.hostelBlock ||
+      'Block B (Kaveri)'
+  );
 
-  const [roomNumber, setRoomNumber] =
-    useState(
-      user?.roomNumber || '304'
-    );
+  const [roomNumber, setRoomNumber] = useState(
+    complaintToEdit?.roomNumber ||
+      user?.roomNumber ||
+      '304'
+  );
 
-  const [priority, setPriority] =
-    useState('MEDIUM');
+  const [priority, setPriority] = useState(
+    complaintToEdit?.priority || 'MEDIUM'
+  );
 
-  const [images, setImages] =
-    useState([]);
+  const [images, setImages] = useState(
+    complaintToEdit?.images || []
+  );
 
   const [submitting, setSubmitting] =
     useState(false);
@@ -172,6 +184,30 @@ export const ReportIssueScreen = ({ navigation }) => {
 
   const submitComplaint = async () => {
     try {
+      if (isEditing) {
+        await updateComplaint(complaintToEdit.id, {
+          title: title.trim(),
+          description: description.trim(),
+          category,
+          priority,
+          hostelBlock: hostelBlock.trim(),
+          roomNumber: roomNumber.trim(),
+          images,
+        });
+
+        Alert.alert(
+          'Complaint Updated',
+          'Your changes have been saved successfully.',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+        return;
+      }
+
       const created = await createComplaint({
         title: title.trim(),
         description: description.trim(),
@@ -192,8 +228,11 @@ export const ReportIssueScreen = ({ navigation }) => {
       });
     } catch (error) {
       Alert.alert(
-        'Submission Error',
-        'Failed to register complaint. Please try again.'
+        isEditing ? 'Update Error' : 'Submission Error',
+        error?.message ||
+          (isEditing
+            ? 'Failed to save changes. Please try again.'
+            : 'Failed to register complaint. Please try again.')
       );
     } finally {
       setSubmitting(false);
@@ -210,6 +249,11 @@ export const ReportIssueScreen = ({ navigation }) => {
     }
 
     setSubmitting(true);
+
+    if (isEditing) {
+      await submitComplaint();
+      return;
+    }
 
     try {
       /*
@@ -332,8 +376,12 @@ export const ReportIssueScreen = ({ navigation }) => {
       ]}
     >
       <ScreenHeader
-        title="Report an Issue"
-        subtitle="Hostel Maintenance Request"
+        title={isEditing ? 'Edit Complaint' : 'Report an Issue'}
+        subtitle={
+          isEditing
+            ? complaintToEdit?.ticketNumber || 'Update Maintenance Details'
+            : 'Hostel Maintenance Request'
+        }
         onBack={() =>
           navigation.goBack()
         }
@@ -742,7 +790,15 @@ export const ReportIssueScreen = ({ navigation }) => {
             style={styles.submitContainer}
           >
             <Button
-              title="Submit Complaint"
+              title={
+                submitting
+                  ? isEditing
+                    ? 'Saving Changes...'
+                    : 'Submitting...'
+                  : isEditing
+                  ? 'Save Changes'
+                  : 'Submit Complaint'
+              }
               onPress={handleSubmit}
               variant="primary"
               loading={submitting}

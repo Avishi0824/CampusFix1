@@ -41,7 +41,7 @@ import { LoadingState } from '../../components/LoadingState';
 import { AssignmentModal } from '../../components/AssignmentModal';
 
 export const WardenDetailScreen = ({ route, navigation }) => {
-  const { theme } = useAuth();
+  const { theme, user } = useAuth();
 
   const {
     getComplaintById,
@@ -62,9 +62,12 @@ export const WardenDetailScreen = ({ route, navigation }) => {
   const [commentText, setCommentText] =
     useState('');
 
+  const wardenHostel = user?.hostelBlock || user?.hostel || null;
+  const isScopedWarden = Boolean(wardenHostel);
+
   /*
    * ----------------------------------------------------
-   * TICKET NOT FOUND
+   * TICKET NOT FOUND OR RESTRICTED
    * ----------------------------------------------------
    */
 
@@ -85,6 +88,29 @@ export const WardenDetailScreen = ({ route, navigation }) => {
         />
 
         <LoadingState message="Ticket not found." />
+      </SafeAreaView>
+    );
+  }
+
+  if (isScopedWarden && complaint.hostelBlock && complaint.hostelBlock !== wardenHostel) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          {
+            backgroundColor:
+              theme.colors.background,
+          },
+        ]}
+      >
+        <ScreenHeader
+          title="Access Restricted"
+          onBack={() => navigation.goBack()}
+        />
+
+        <LoadingState
+          message={`Access Restricted: You are only authorized to manage complaints for ${wardenHostel}.`}
+        />
       </SafeAreaView>
     );
   }

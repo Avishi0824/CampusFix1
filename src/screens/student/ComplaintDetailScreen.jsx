@@ -11,6 +11,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +25,10 @@ import {
   AlertCircle,
   MessageSquare,
   Sparkles,
+  Edit3,
+  Trash2,
+  XCircle,
+  Lock,
 } from 'lucide-react-native';
 
 import { useAuth } from '../../context/AuthContext';
@@ -43,7 +48,7 @@ export const ComplaintDetailScreen = ({
   navigation,
 }) => {
   const { theme, user } = useAuth();
-  const { getComplaintById, addComment } = useComplaints();
+  const { getComplaintById, addComment, cancelComplaint } = useComplaints();
 
   const complaintId = route?.params?.complaintId;
 
@@ -53,6 +58,75 @@ export const ComplaintDetailScreen = ({
 
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  const isOwner = Boolean(user?.id && complaint?.studentId === user.id);
+  const isReported = complaint?.status === 'REPORTED';
+  const isAssigned = Boolean(
+    complaint?.assignedTechnicianId ||
+      complaint?.status === 'ASSIGNED' ||
+      complaint?.status === 'IN_PROGRESS'
+  );
+  const isResolved = complaint?.status === 'RESOLVED';
+  const isCancelled = complaint?.status === 'CANCELLED';
+  const canEditOrCancel = isOwner && isReported && !complaint?.assignedTechnicianId;
+
+  const handleEdit = () => {
+    if (!canEditOrCancel) {
+      Alert.alert(
+        'Edit Unavailable',
+        isAssigned
+          ? 'This complaint has been assigned to a technician and work is in progress. Direct edits are locked to preserve operational records.'
+          : isCancelled
+          ? 'This complaint has been cancelled.'
+          : isResolved
+          ? 'This complaint is already resolved.'
+          : 'You do not have permission to edit this complaint.'
+      );
+      return;
+    }
+    navigation.navigate('ReportIssue', { complaintToEdit: complaint });
+  };
+
+  const handleCancel = () => {
+    if (!canEditOrCancel) {
+      Alert.alert(
+        'Cancellation Unavailable',
+        isAssigned
+          ? 'A technician has already been assigned to this ticket. Direct cancellation is no longer possible.'
+          : 'This complaint cannot be cancelled.'
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Cancel Complaint',
+      'Are you sure you want to cancel this complaint? It will be removed from your active complaints list and marked as cancelled.',
+      [
+        { text: 'Keep Complaint', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              await cancelComplaint(complaint.id);
+              Alert.alert('Complaint Cancelled', 'Your complaint has been successfully cancelled.', [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]);
+            } catch (err) {
+              Alert.alert('Cancellation Error', err?.message || 'Failed to cancel complaint. Please try again.');
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   if (!complaint) {
     return (
@@ -149,6 +223,119 @@ export const ComplaintDetailScreen = ({
               priority={complaint.priority}
             />
           </View>
+
+          {/* Action Buttons for Eligible Student Complaints */}
+          {canEditOrCancel && (
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleEdit}
+                disabled={cancelling}
+                style={[
+                  styles.actionBtn,
+                  {
+                    borderColor: theme.colors.accent,
+                    backgroundColor: theme.colors.surfaceSubtle,
+                  },
+                ]}
+              >
+                <Edit3
+                  size={15}
+                  color={theme.colors.accent}
+                  strokeWidth={2}
+                />
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    { color: theme.colors.accent },
+                  ]}
+                >
+                  EDIT COMPLAINT
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleCancel}
+                disabled={cancelling}
+                style={[
+                  styles.actionBtn,
+                  {
+                    borderColor: '#EF4444',
+                    backgroundColor: '#EF444415',
+                  },
+                ]}
+              >
+                <Trash2
+                  size={15}
+                  color="#EF4444"
+                  strokeWidth={2}
+                />
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    { color: '#EF4444' },
+                  ]}
+                >
+                  {cancelling ? 'CANCELLING...' : 'CANCEL TICKET'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Notice Banner: Cancelled Ticket */}
+          {isCancelled && (
+            <View
+              style={[
+                styles.infoBanner,
+                {
+                  backgroundColor: '#94A3B818',
+                  borderColor: '#94A3B840',
+                },
+              ]}
+            >
+              <XCircle
+                size={16}
+                color="#94A3B8"
+                style={styles.infoBannerIcon}
+              />
+              <Text
+                style={[
+                  styles.infoBannerText,
+                  { color: theme.colors.textSecondary },
+                ]}
+              >
+                This complaint was cancelled and is no longer active.
+              </Text>
+            </View>
+          )}
+
+          {/* Notice Banner: Assigned / In Progress */}
+          {isAssigned && isOwner && (
+            <View
+              style={[
+                styles.infoBanner,
+                {
+                  backgroundColor: `${theme.colors.accent}12`,
+                  borderColor: `${theme.colors.accent}30`,
+                },
+              ]}
+            >
+              <Lock
+                size={15}
+                color={theme.colors.accent}
+                style={styles.infoBannerIcon}
+              />
+              <Text
+                style={[
+                  styles.infoBannerText,
+                  { color: theme.colors.textSecondary },
+                ]}
+              >
+                Staff allocation or work has begun. Direct editing or cancellation is locked to maintain task accountability. Add an update note below if needed.
+              </Text>
+            </View>
+          )}
 
           {/* Issue Title & Description Card */}
 
@@ -627,6 +814,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
+  },
+
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: Geometry.radiusNone,
+    gap: 6,
+  },
+
+  actionBtnText: {
+    fontFamily: Typography.monoBold,
+    fontSize: Typography.sizes.micro,
+    letterSpacing: 0.6,
+  },
+
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderWidth: 1,
+    borderRadius: Geometry.radiusNone,
+    marginBottom: 12,
+  },
+
+  infoBannerIcon: {
+    marginRight: 8,
+    marginTop: 2,
+  },
+
+  infoBannerText: {
+    flex: 1,
+    fontFamily: Typography.body,
+    fontSize: Typography.sizes.caption,
+    lineHeight: 18,
   },
 
   sectionCard: {

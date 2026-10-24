@@ -35,6 +35,13 @@ const STATUS_CONFIG = {
     bgLight: '#EDF5EE',
     bgDark: '#28382C',
   },
+
+  CANCELLED: {
+    label: 'CANCELLED',
+    color: '#94A3B8',
+    bgLight: '#F1F5F9',
+    bgDark: '#1E293B',
+  },
 };
 
 export const StatusBadge = ({

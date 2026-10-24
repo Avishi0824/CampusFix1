@@ -221,17 +221,22 @@ export const AuthProvider = ({ children }) => {
       .eq('auth_user_id', data.user.id)
       .maybeSingle();
 
-    if (profileError || !profile) {
-      await supabase.auth.signOut();
-      throw new Error(
-        'Your account is not linked to a CampusFix profile.'
-      );
+    let userProfile = profile;
+    if (profileError || !userProfile) {
+      try {
+        userProfile = await createCampusFixProfile(data.user);
+      } catch {
+        await supabase.auth.signOut();
+        throw new Error(
+          'Your account is not linked to a CampusFix profile.'
+        );
+      }
     }
 
-    if (profile.role !== expectedRole) {
+    if (userProfile.role !== expectedRole) {
       await supabase.auth.signOut();
       throw new Error(
-        `This account is registered as ${profile.role}, not ${expectedRole}.`
+        `This account is registered as ${userProfile.role}, not ${expectedRole}.`
       );
     }
 

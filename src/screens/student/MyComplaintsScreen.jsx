@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Alert,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +17,8 @@ import {
   MapPin,
   ArrowRight,
   Settings,
+  Edit3,
+  Trash2,
 } from 'lucide-react-native';
 
 import { useAuth } from '../../context/AuthContext';
@@ -40,6 +43,7 @@ export const MyComplaintsScreen = ({ navigation }) => {
     complaints,
     isLoading,
     refreshComplaints,
+    cancelComplaint,
   } = useComplaints();
 
   const [selectedStatusTab, setSelectedStatusTab] =
@@ -102,7 +106,7 @@ export const MyComplaintsScreen = ({ navigation }) => {
 
       if (
         selectedStatusTab === 'ACTIVE' &&
-        complaint.status === 'RESOLVED'
+        (complaint.status === 'RESOLVED' || complaint.status === 'CANCELLED')
       ) {
         return false;
       }
@@ -110,6 +114,13 @@ export const MyComplaintsScreen = ({ navigation }) => {
       if (
         selectedStatusTab === 'RESOLVED' &&
         complaint.status !== 'RESOLVED'
+      ) {
+        return false;
+      }
+
+      if (
+        selectedStatusTab === 'CANCELLED' &&
+        complaint.status !== 'CANCELLED'
       ) {
         return false;
       }
@@ -133,6 +144,28 @@ export const MyComplaintsScreen = ({ navigation }) => {
     selectedStatusTab,
     selectedCategory,
   ]);
+
+  const handleCancelComplaint = (complaint) => {
+    Alert.alert(
+      'Cancel Complaint',
+      `Are you sure you want to cancel ticket #${complaint.ticketNumber}? It will be removed from your active list.`,
+      [
+        { text: 'Keep Ticket', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelComplaint(complaint.id);
+              Alert.alert('Complaint Cancelled', 'The ticket has been marked as cancelled.');
+            } catch (err) {
+              Alert.alert('Error', err?.message || 'Failed to cancel complaint.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // =====================================================
   // COMPLAINT CARD
@@ -235,6 +268,67 @@ export const MyComplaintsScreen = ({ navigation }) => {
             {item.location}
           </Text>
         </View>
+
+        {/* Quick Actions for Eligible Unassigned Complaints */}
+        {item.status === 'REPORTED' && item.studentId === user?.id && !item.assignedTechnicianId && (
+          <View style={styles.cardActionsRow}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() =>
+                navigation.navigate('ReportIssue', {
+                  complaintToEdit: item,
+                })
+              }
+              style={[
+                styles.cardActionBtn,
+                {
+                  borderColor: theme.colors.accent,
+                  backgroundColor: theme.colors.surfaceSubtle,
+                },
+              ]}
+            >
+              <Edit3
+                size={12}
+                color={theme.colors.accent}
+                strokeWidth={2}
+              />
+              <Text
+                style={[
+                  styles.cardActionText,
+                  { color: theme.colors.accent },
+                ]}
+              >
+                EDIT
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => handleCancelComplaint(item)}
+              style={[
+                styles.cardActionBtn,
+                {
+                  borderColor: '#EF4444',
+                  backgroundColor: '#EF444415',
+                },
+              ]}
+            >
+              <Trash2
+                size={12}
+                color="#EF4444"
+                strokeWidth={2}
+              />
+              <Text
+                style={[
+                  styles.cardActionText,
+                  { color: '#EF4444' },
+                ]}
+              >
+                CANCEL
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Footer */}
 
@@ -380,6 +474,7 @@ export const MyComplaintsScreen = ({ navigation }) => {
             'ALL',
             'ACTIVE',
             'RESOLVED',
+            'CANCELLED',
           ].map((tab) => {
             const isActive =
               selectedStatusTab === tab;
@@ -830,5 +925,29 @@ const styles = StyleSheet.create({
 
   arrow: {
     marginLeft: 4,
+  },
+
+  // CARD QUICK ACTIONS
+  cardActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+    marginTop: -2,
+  },
+
+  cardActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderRadius: Geometry.radiusNone,
+    gap: 5,
+  },
+
+  cardActionText: {
+    fontFamily: Typography.monoBold,
+    fontSize: Typography.sizes.micro,
+    letterSpacing: 0.5,
   },
 });
